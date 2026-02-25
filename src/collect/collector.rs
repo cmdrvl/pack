@@ -111,6 +111,14 @@ impl ArtifactCollector {
                 error: e.to_string()
             })?;
 
+        // Check for reserved member path
+        if normalized_member_path == "manifest.json" {
+            return Err(CollectionError::ReservedPath {
+                member_path: normalized_member_path,
+                source: file_path.to_string_lossy().to_string(),
+            });
+        }
+
         // Check for collision
         if let Some(existing) = self.files.get(&normalized_member_path) {
             return Err(CollectionError::DuplicatePath {
@@ -198,6 +206,14 @@ impl ArtifactCollector {
             if metadata.is_file() {
                 let member_path = create_member_path(dir_basename, &new_relative_path);
 
+                // Check for reserved member path
+                if member_path == "manifest.json" {
+                    return Err(CollectionError::ReservedPath {
+                        member_path: member_path.clone(),
+                        source: entry_path.to_string_lossy().to_string(),
+                    });
+                }
+
                 // Check for collision
                 if let Some(existing) = self.files.get(&member_path) {
                     return Err(CollectionError::DuplicatePath {
@@ -236,34 +252,62 @@ impl Default for ArtifactCollector {
 }
 
 /// Collection errors mapped to refusal codes
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum CollectionError {
     /// IO operation failed
-    #[error("IO operation '{operation}' failed on {}: {error}", path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "unknown path".to_string()))]
     Io {
         path: Option<PathBuf>,
         operation: String,
         error: String,
     },
     /// Path normalization failed
-    #[error("Path normalization failed for {}: {error}", path.display())]
     PathNormalization {
         path: PathBuf,
         error: String,
     },
     /// Duplicate member path collision
-    #[error("Duplicate member path '{member_path}' from {} sources", sources.len())]
     DuplicatePath {
         member_path: String,
         sources: Vec<PathBuf>,
     },
     /// Non-regular file encountered
-    #[error("Non-regular file ({file_type}) not supported: {}", path.display())]
     NonRegularFile {
         path: PathBuf,
         file_type: String,
     },
+    /// Reserved member path collision
+    ReservedPath {
+        member_path: String,
+        source: String,
+    },
 }
+
+impl std::fmt::Display for CollectionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CollectionError::Io { path, operation, error } => {
+                let path_str = path.as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "unknown path".to_string());
+                write!(f, "IO operation '{}' failed on {}: {}", operation, path_str, error)
+            }
+            CollectionError::PathNormalization { path, error } => {
+                write!(f, "Path normalization failed for {}: {}", path.display(), error)
+            }
+            CollectionError::DuplicatePath { member_path, sources } => {
+                write!(f, "Duplicate member path '{}' from {} sources", member_path, sources.len())
+            }
+            CollectionError::NonRegularFile { path, file_type } => {
+                write!(f, "Non-regular file ({}) not supported: {}", file_type, path.display())
+            }
+            CollectionError::ReservedPath { member_path, source: _ } => {
+                write!(f, "Reserved member path '{}' not allowed", member_path)
+            }
+        }
+    }
+}
+
+impl std::error::Error for CollectionError {}
 
 impl CollectionError {
     /// Convert to refusal code and detail
@@ -294,6 +338,12 @@ impl CollectionError {
                     Some(path.to_string_lossy().to_string()),
                     "file_type_check".to_string(),
                     "Non-regular file not supported".to_string(),
+                )
+            }
+            CollectionError::ReservedPath { member_path, source } => {
+                RefusalCode::duplicate(
+                    member_path.clone(),
+                    vec![source.clone(), "reserved by pack manifest".to_string()],
                 )
             }
         }
@@ -444,5 +494,75 @@ mod tests {
             }
             other => panic!("Expected Io error, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_reserved_manifest_path() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let base = temp_dir.path();
+
+        // Create a file named manifest.json
+        fs::write(base.join("manifest.json"), r#"{"malicious": "manifest"}"#)?;
+
+        let mut collector = ArtifactCollector::new();
+        let result = collector.collect(&[base.join("manifest.json")]);
+
+        match result {
+            Err(CollectionError::ReservedPath { member_path, .. }) => {
+                assert_eq!(member_path, "manifest.json");
+            }
+            other => panic!("Expected ReservedPath error, got {:?}", other),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_reserved_manifest_in_directory() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let base = temp_dir.path();
+
+        // Create a directory with manifest.json inside - this should NOT fail
+        // because "subdir/manifest.json" is not the reserved path "manifest.json"
+        fs::create_dir(base.join("subdir"))?;
+        fs::write(base.join("subdir/manifest.json"), r#"{"nested": "manifest"}"#)?;
+        fs::write(base.join("subdir/other.txt"), "other content")?;
+
+        let mut collector = ArtifactCollector::new();
+        let result = collector.collect(&[base.join("subdir")]);
+
+        // This should succeed - nested manifest.json files are allowed
+        result.expect("Should succeed - nested manifest.json is allowed");
+
+        let files = collector.get_files();
+        assert_eq!(files.len(), 2);
+
+        let member_paths: Vec<_> = files.iter().map(|f| &f.member_path).collect();
+        assert!(member_paths.contains(&&"subdir/manifest.json".to_string()));
+        assert!(member_paths.contains(&&"subdir/other.txt".to_string()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_root_level_directory_named_manifest() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let base = temp_dir.path();
+
+        // Create a directory literally named "manifest.json" (weird but possible)
+        fs::create_dir(base.join("manifest.json"))?;
+        fs::write(base.join("manifest.json/file.txt"), "content")?;
+
+        let mut collector = ArtifactCollector::new();
+        let result = collector.collect(&[base.join("manifest.json")]);
+
+        // This should succeed because the member path will be "manifest.json/file.txt", not "manifest.json"
+        result.expect("Should succeed - directory named manifest.json is allowed");
+
+        let files = collector.get_files();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].member_path, "manifest.json/file.txt");
+
+        Ok(())
     }
 }
