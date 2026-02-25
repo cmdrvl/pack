@@ -7,6 +7,7 @@ pub mod refusal;
 pub mod collect;
 pub mod copy;
 pub mod finalize;
+pub mod verify;
 
 #[derive(Parser)]
 #[command(name = "pack")]
@@ -192,19 +193,32 @@ fn handle_seal(args: SealArgs, _no_witness: bool) -> Result<u8> {
 }
 
 fn handle_verify(args: VerifyArgs, _no_witness: bool) -> Result<u8> {
-    // Basic validation - check if pack directory exists and has manifest.json
-    let manifest_path = std::path::Path::new(&args.pack_dir).join("manifest.json");
-    if !manifest_path.exists() {
-        let (code, detail) = refusal::RefusalCode::bad_pack(
-            args.pack_dir.clone(),
-            "manifest.json not found".to_string()
-        );
-        return Ok(output_refusal(code, detail));
-    }
+    let verifier = crate::verify::PackVerifier::new(&args.pack_dir);
 
-    // TODO: Implement rest of verify command
-    eprintln!("verify command domain logic not implemented yet");
-    Ok(2) // REFUSAL
+    match verifier.verify() {
+        Ok(result) => {
+            if args.json {
+                // Output JSON result
+                match result.to_json() {
+                    Ok(json_output) => println!("{}", json_output),
+                    Err(e) => {
+                        eprintln!("Error serializing result to JSON: {}", e);
+                        return Ok(2); // REFUSAL
+                    }
+                }
+            } else {
+                // Output human-readable result
+                print!("{}", result.to_human_output());
+            }
+
+            Ok(result.exit_code())
+        }
+        Err(error) => {
+            // Convert verification error to refusal
+            let (code, detail) = error.to_refusal();
+            Ok(output_refusal(code, detail))
+        }
+    }
 }
 
 fn handle_witness(_args: WitnessArgs) -> Result<u8> {
