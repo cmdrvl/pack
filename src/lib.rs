@@ -4,6 +4,7 @@ use crate::refusal::output_refusal;
 
 pub mod manifest;
 pub mod refusal;
+pub mod collect;
 
 #[derive(Parser)]
 #[command(name = "pack")]
