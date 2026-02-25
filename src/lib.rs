@@ -1,7 +1,9 @@
 use clap::{Args, Parser, Subcommand};
 use anyhow::Result;
+use crate::refusal::output_refusal;
 
 pub mod manifest;
+pub mod refusal;
 
 #[derive(Parser)]
 #[command(name = "pack")]
@@ -174,15 +176,31 @@ fn handle_schema() -> Result<u8> {
     Ok(0)
 }
 
-fn handle_seal(_args: SealArgs, _no_witness: bool) -> Result<u8> {
-    // TODO: Implement seal command
-    eprintln!("seal command not implemented yet");
+fn handle_seal(args: SealArgs, _no_witness: bool) -> Result<u8> {
+    // Check for empty artifacts first (E_EMPTY)
+    if args.artifacts.is_empty() {
+        let (code, detail) = refusal::RefusalCode::empty();
+        return Ok(output_refusal(code, detail));
+    }
+
+    // TODO: Implement rest of seal command
+    eprintln!("seal command domain logic not implemented yet");
     Ok(2) // REFUSAL
 }
 
-fn handle_verify(_args: VerifyArgs, _no_witness: bool) -> Result<u8> {
-    // TODO: Implement verify command
-    eprintln!("verify command not implemented yet");
+fn handle_verify(args: VerifyArgs, _no_witness: bool) -> Result<u8> {
+    // Basic validation - check if pack directory exists and has manifest.json
+    let manifest_path = std::path::Path::new(&args.pack_dir).join("manifest.json");
+    if !manifest_path.exists() {
+        let (code, detail) = refusal::RefusalCode::bad_pack(
+            args.pack_dir.clone(),
+            "manifest.json not found".to_string()
+        );
+        return Ok(output_refusal(code, detail));
+    }
+
+    // TODO: Implement rest of verify command
+    eprintln!("verify command domain logic not implemented yet");
     Ok(2) // REFUSAL
 }
 
