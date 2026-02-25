@@ -1,6 +1,8 @@
 use clap::{Args, Parser, Subcommand};
 use anyhow::Result;
 
+pub mod manifest;
+
 #[derive(Parser)]
 #[command(name = "pack")]
 #[command(version = "0.1.0")]
