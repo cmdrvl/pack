@@ -1,0 +1,16 @@
+[package]
+name = "pack"
+version = "0.1.0"
+edition = "2021"
+description = "Seal lockfiles, reports, rules, and registry artifacts into immutable, self-verifiable evidence packs"
+license = "MIT"
+authors = ["CMD+RVL <contact@cmd-rvl.com>"]
+
+[dependencies]
+clap = { version = "4.4", features = ["derive", "env"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+
+[dev-dependencies]
+tempfile = "3.8"
