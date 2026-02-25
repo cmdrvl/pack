@@ -113,9 +113,9 @@ pack push <PACK_DIR>
 pack pull <PACK_ID> --out <DIR>
   (deferred in v0.1; thin data-fabric wrapper)
 
-pack witness query [filters]
-pack witness last
-pack witness count [filters]
+pack witness query [filters] [--json]
+pack witness last [--json]
+pack witness count [filters] [--json]
 ```
 
 ### Common flags (all subcommands)
@@ -141,7 +141,7 @@ pack witness count [filters]
 | `verify` | Human report | Yes |
 | `diff` | Human report (deferred v0.1) | Yes |
 | `push`, `pull` | Status lines (deferred v0.1) | N/A |
-| `witness` | Human report | N/A |
+| `witness` | Human report | Yes |
 
 ---
 
@@ -169,8 +169,12 @@ Rules:
 
 - `manifest.json` is always present.
 - Every manifest member must exist as a file relative to pack root.
+- `manifest.json` is reserved and must not appear in `members[].path`.
+- Pack root is closed-set: only `manifest.json` plus declared member files are allowed.
 - Member files are copied byte-for-byte from source inputs.
 - `member_count` equals `len(members)` and equals files listed (excluding `manifest.json`).
+- `seal` refuses if target output directory already exists and is non-empty.
+- `seal` writes via a temp staging directory and atomically renames on success (no partial pack on failure).
 
 ---
 
@@ -206,7 +210,7 @@ Rules:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `version` | string | yes | Always `"pack.v0"` |
-| `pack_id` | string | yes | Self-hash (computed last) |
+| `pack_id` | string | yes | Self-hash (computed last from canonical manifest with `pack_id=""`) |
 | `created` | string | yes | ISO 8601 UTC timestamp |
 | `note` | string/null | no | Optional annotation |
 | `tool_version` | string | yes | `pack` semver that created the pack |
@@ -228,7 +232,7 @@ Rules:
 3. Compute SHA256 over canonical bytes.
 4. Set `pack_id` to `"sha256:<hex>"`.
 
-Any change in note, members, member order, or copied bytes changes `pack_id`.
+Any change in manifest content (including note, created, tool_version, members, member order, or copied bytes) changes `pack_id`.
 
 ---
 
@@ -241,10 +245,13 @@ Collection rules:
 - File argument: include as one member using basename as default member path.
 - Directory argument: recursively include all files under that directory using `<dir_basename>/<relative_path>`.
 - Traversal order is deterministic: bytewise ascending path order.
+- Member paths are normalized to relative POSIX-style paths (`/` separators), never absolute, and never include `..` segments.
+- Only regular files are admissible members; symlinks, sockets, devices, and FIFOs refuse with `E_IO`.
 
 Collision rule:
 
 - If two candidate members resolve to the same member `path`, refusal `E_DUPLICATE`.
+- Reserved member path `manifest.json` also refuses with `E_DUPLICATE`.
 
 Copy rule:
 
@@ -263,7 +270,7 @@ Copy rule:
 - `verify.rules.v0` → `rules`
 - `pack.v0` → `pack`
 - YAML with `schema_version` + `profile_id` → `profile`
-- Directory/materialized registry trees → `registry`
+- Files from materialized registry artifacts (for example `registry.json` and registry tables) → `registry`
 - Everything else → `other`
 
 `artifact_version` is populated when a recognized version field exists.
@@ -279,10 +286,14 @@ Checks:
 1. `manifest.json` exists and parses.
 2. Manifest is `pack.v0`.
 3. `member_count == len(members)`.
-4. Every `members[].path` exists as a file.
-5. Re-hash each member and compare with `members[].bytes_hash`.
-6. Recompute `pack_id` and compare with manifest `pack_id`.
-7. Validate known JSON members against corresponding schemas when possible.
+4. `members[].path` values are unique and do not include reserved `manifest.json`.
+5. Every `members[].path` is a safe relative path (no absolute/`..`) and resolves to a regular non-symlink file under pack root.
+6. No extra files are present under pack root beyond `manifest.json` and declared member paths.
+7. Re-hash each member and compare with `members[].bytes_hash`.
+8. Recompute `pack_id` using the same canonical-manifest procedure (`pack_id=""` during hash) and compare with manifest `pack_id`.
+9. Validate known JSON members against locally available schemas (no network fetch during verify).
+
+If a known type has no local schema installed, verification records that check as skipped (not `INVALID`).
 
 Outcomes:
 
@@ -300,9 +311,11 @@ Outcomes:
   "checks": {
     "manifest_parse": true,
     "member_count": true,
+    "member_paths": true,
+    "extra_members": true,
     "member_hashes": true,
     "pack_id": true,
-    "schema_validation": true
+    "schema_validation": "pass | fail | skipped"
   },
   "invalid": [],
   "refusal": null
@@ -314,6 +327,11 @@ For `INVALID`, `invalid` contains deterministic entries like:
 - `{ "code": "MISSING_MEMBER", "path": "verify.report.json" }`
 - `{ "code": "HASH_MISMATCH", "path": "rvl.report.json", "expected": "sha256:...", "actual": "sha256:..." }`
 - `{ "code": "PACK_ID_MISMATCH", "expected": "sha256:...", "actual": "sha256:..." }`
+- `{ "code": "DUPLICATE_MEMBER_PATH", "path": "rvl.report.json" }`
+- `{ "code": "RESERVED_MEMBER_PATH", "path": "manifest.json" }`
+- `{ "code": "UNSAFE_MEMBER_PATH", "path": "../outside.txt" }`
+- `{ "code": "NON_REGULAR_MEMBER", "path": "linked.report.json" }`
+- `{ "code": "EXTRA_MEMBER", "path": "tmp/debug.txt" }`
 
 ---
 
@@ -392,7 +410,7 @@ Failure mapping:
 
 `pack` follows the spine witness protocol:
 
-- Default: append one `witness.v0` record per invocation.
+- Default: append one `witness.v0` record per eligible invocation.
 - Opt-out: `--no-witness`.
 - Path: `EPISTEMIC_WITNESS` or `~/.epistemic/witness.jsonl`.
 - Witness append failure never changes domain exit semantics.
@@ -423,20 +441,23 @@ Witness outcome mapping:
      a. Resolve/collect artifacts (files + recursive dirs)
      b. Refuse E_EMPTY if none
      c. Resolve member paths + detect collisions (E_DUPLICATE)
-     d. Copy members into output dir
-     e. Build member metadata + type detection
-     f. Build manifest with pack_id=""
-     g. Canonicalize + compute SHA256 pack_id
-     h. Write manifest.json
-     i. Exit 0
+     d. Prepare staging dir (refuse if final output exists and non-empty)
+     e. Copy members into staging dir
+     f. Build member metadata + type detection
+     g. Build manifest with pack_id=""
+     h. Canonicalize full manifest + compute SHA256 pack_id
+     i. Write manifest.json and atomically promote staging dir
+     j. Exit 0
 
    verify:
      a. Read manifest.json (E_BAD_PACK/E_IO on failure)
      b. Validate manifest shape and member_count
-     c. For each member: file exists + hash matches
-     d. Recompute pack_id
-     e. Validate known member schemas (best-effort deterministic)
-     f. Exit 0 (OK) or 1 (INVALID) or 2 (REFUSAL)
+     c. Validate member-path uniqueness and reserved-name rules
+     d. For each member: safe path + regular file + hash match
+     e. Detect unexpected extra files under pack root
+     f. Recompute pack_id from canonical manifest (`pack_id=""` during hash)
+     g. Validate known member schemas from local catalog (skip when unavailable)
+     h. Exit 0 (OK) or 1 (INVALID) or 2 (REFUSAL)
 
    diff (when implemented):
      a. Read both manifests
@@ -532,11 +553,17 @@ Required highlights:
 - `seal` creates deterministic manifest for identical inputs
 - member ordering is deterministic (bytewise path order)
 - `pack_id` is stable and self-verifiable
+- `pack_id` changes when any manifest field changes (including metadata fields)
 - duplicate path collision returns `E_DUPLICATE`
+- non-regular input members (symlink/socket/device/FIFO) refuse with `E_IO`
+- existing non-empty output dir refuses and leaves no partial pack behind
+- verify flags unsafe manifest member paths (absolute or `..`) as `INVALID`
+- verify flags duplicate member paths and reserved member path `manifest.json` as `INVALID`
+- verify flags extra unexpected files under pack root as `INVALID`
 - type detection mapping is deterministic for known versions
 - `verify` returns:
   - `OK` on valid pack
-  - `INVALID` on missing member/hash mismatch/pack_id mismatch/schema mismatch
+  - `INVALID` on missing member/hash mismatch/pack_id mismatch/schema mismatch/extra member/non-regular member/duplicate or reserved member path
   - `REFUSAL` on unreadable or malformed manifest
 - refusal envelope correctness for all refusal codes
 - witness append/no-witness behavior
@@ -574,4 +601,4 @@ Deferred test tracks:
 
 ## Open questions
 
-None currently blocking v0.1.
+- Should `seal` support `--created <RFC3339>` (or `SOURCE_DATE_EPOCH`) to allow reproducible repacks across different run times? Not blocking v0.1.
