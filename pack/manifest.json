@@ -1,0 +1,15 @@
+{
+  "version": "pack.v0",
+  "pack_id": "sha256:89e9cedf5fbc98b2dd5e2203babb7e2d124a3a5a38c8631ddad3223a504e6218",
+  "created": "2026-02-25T14:10:29.081355+00:00",
+  "note": "Test pack creation",
+  "tool_version": "0.1.0",
+  "members": [
+    {
+      "path": "test_file.txt",
+      "bytes_hash": "sha256:a1fff0ffefb9eace7230c24e50731f0a91c62f9cefdfe77121c2f607125dffae",
+      "type": "other"
+    }
+  ],
+  "member_count": 1
+}

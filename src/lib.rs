@@ -8,6 +8,7 @@ pub mod collect;
 pub mod copy;
 pub mod finalize;
 pub mod verify;
+pub mod seal;
 
 #[derive(Parser)]
 #[command(name = "pack")]
@@ -187,9 +188,62 @@ fn handle_seal(args: SealArgs, _no_witness: bool) -> Result<u8> {
         return Ok(output_refusal(code, detail));
     }
 
-    // TODO: Implement rest of seal command
-    eprintln!("seal command domain logic not implemented yet");
-    Ok(2) // REFUSAL
+    // Check if custom output was provided
+    let has_custom_output = args.output.is_some();
+
+    // Determine output directory
+    let output_dir = if let Some(output) = args.output {
+        std::path::PathBuf::from(output)
+    } else {
+        // Default: pack/<pack_id>/ - but we don't know pack_id yet
+        // For now, create a temporary name and let orchestrator handle it
+        std::path::PathBuf::from("pack") // Will be updated after pack_id computation
+    };
+
+    // Convert string paths to PathBuf for seal orchestration
+    let artifact_paths: Vec<std::path::PathBuf> = args.artifacts
+        .into_iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+
+    // Run seal orchestration
+    match crate::seal::seal_artifacts(artifact_paths, output_dir, args.note) {
+        Ok(result) => {
+            // For custom output directory, use as-is
+            // For default, move to pack/<pack_id>/
+            let final_output = if has_custom_output {
+                result.output_dir
+            } else {
+                let pack_subdir = std::path::PathBuf::from("pack").join(&result.pack_id);
+
+                // Move from temp location to pack/<pack_id>/
+                if result.output_dir != pack_subdir {
+                    if let Err(e) = std::fs::rename(&result.output_dir, &pack_subdir) {
+                        eprintln!("Warning: Could not move to default location: {}", e);
+                        result.output_dir
+                    } else {
+                        pack_subdir
+                    }
+                } else {
+                    result.output_dir
+                }
+            };
+
+            // Create updated result with final output directory
+            let final_result = crate::seal::SealResult {
+                pack_id: result.pack_id,
+                output_dir: final_output,
+                member_count: result.member_count,
+            };
+
+            print!("{}", final_result.to_human_output());
+            Ok(0) // PACK_CREATED
+        }
+        Err(error) => {
+            let (code, detail) = error.to_refusal();
+            Ok(output_refusal(code, detail))
+        }
+    }
 }
 
 fn handle_verify(args: VerifyArgs, _no_witness: bool) -> Result<u8> {
