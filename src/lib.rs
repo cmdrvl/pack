@@ -6,6 +6,7 @@ pub mod manifest;
 pub mod refusal;
 pub mod collect;
 pub mod copy;
+pub mod finalize;
 
 #[derive(Parser)]
 #[command(name = "pack")]
