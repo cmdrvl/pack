@@ -1,0 +1,5 @@
+schema_version: 1
+profile_id: test_tape_v1
+fields:
+  - name: id
+    type: string

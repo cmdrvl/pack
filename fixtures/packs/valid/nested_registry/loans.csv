@@ -1,0 +1,4 @@
+loan_id,balance,status
+L001,250000,active
+L002,175000,active
+L003,0,paid_off

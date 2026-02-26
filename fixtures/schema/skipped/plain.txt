@@ -1,0 +1,2 @@
+Plain text file with no JSON or YAML markers.
+Detection should skip all parsers and return "other".

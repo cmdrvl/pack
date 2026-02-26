@@ -1,0 +1,1 @@
+{"version":"verify.rules.v0","rules":[{"field":"loan_id","check":"not_null"},{"field":"balance","check":"positive"}]}

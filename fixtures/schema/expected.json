@@ -1,0 +1,62 @@
+{
+  "pass/lockfile.json": {
+    "member_type": "lockfile",
+    "artifact_version": "lock.v0"
+  },
+  "pass/report_rvl.json": {
+    "member_type": "report",
+    "artifact_version": "rvl.v0"
+  },
+  "pass/report_shape.json": {
+    "member_type": "report",
+    "artifact_version": "shape.v0"
+  },
+  "pass/report_verify.json": {
+    "member_type": "report",
+    "artifact_version": "verify.v0"
+  },
+  "pass/report_compare.json": {
+    "member_type": "report",
+    "artifact_version": "compare.v0"
+  },
+  "pass/artifact_canon.json": {
+    "member_type": "artifact",
+    "artifact_version": "canon.v0"
+  },
+  "pass/artifact_assess.json": {
+    "member_type": "artifact",
+    "artifact_version": "assess.v0"
+  },
+  "pass/rules.json": {
+    "member_type": "rules",
+    "artifact_version": "verify.rules.v0"
+  },
+  "pass/profile.yaml": {
+    "member_type": "profile",
+    "artifact_version": null
+  },
+  "fail/unknown_version.json": {
+    "member_type": "other",
+    "artifact_version": null
+  },
+  "fail/no_version_field.json": {
+    "member_type": "other",
+    "artifact_version": null
+  },
+  "fail/yaml_missing_profile_id.yaml": {
+    "member_type": "other",
+    "artifact_version": null
+  },
+  "fail/yaml_missing_schema_version.yaml": {
+    "member_type": "other",
+    "artifact_version": null
+  },
+  "skipped/plain.txt": {
+    "member_type": "other",
+    "artifact_version": null
+  },
+  "skipped/binary.bin": {
+    "member_type": "other",
+    "artifact_version": null
+  }
+}

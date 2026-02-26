@@ -2,197 +2,241 @@
 
 Seal lockfiles, reports, rules, and registry artifacts into one immutable, self-verifiable evidence pack.
 
-`pack` is the deterministic answer to:
-
-- What was known?
-- How was it established?
-
-A pack is both:
+A pack is the deterministic answer to: *what was known, and how was it established?*
 
 - A directory you can inspect
 - A hash you can trust
 
-## Status
+## Quickstart
 
-`pack` is currently being implemented from the v0.1 plan in [`docs/plan.md`](docs/plan.md).
-This README describes the target contract and operator behavior.
+```bash
+# Install from source
+cargo build --release
+export PATH="$PWD/target/release:$PATH"
 
-## TL;DR
+# Seal artifacts into an evidence pack
+pack seal nov.lock.json dec.lock.json shape.report.json rvl.report.json \
+  --note "Nov→Dec 2025 reconciliation" \
+  --output evidence/2025-12/
+# → PACK_CREATED sha256:e78de23c...
+# → evidence/2025-12/
 
-Spine tools produce deterministic artifacts, but evidence is often scattered.
-`pack` binds those artifacts into one content-addressed envelope.
+# Verify the sealed pack
+pack verify evidence/2025-12/
+# → pack verify: OK
+# →   pack_id: sha256:e78de23c...
 
-Core outcomes:
+# Check the witness ledger
+pack witness last
+# → 2026-02-25T12:00:00.000Z verify OK -
+```
 
-- `pack seal`: creates a deterministic pack directory
-- `pack verify`: proves integrity or reports deterministic invalid findings
-- `pack witness`: queries witness history for pack operations
+### Successful flow (exit 0)
+
+```bash
+$ pack seal fixtures/artifacts/nov.lock.json fixtures/artifacts/rules.json \
+    --output /tmp/demo --no-witness
+PACK_CREATED sha256:abc123...
+/tmp/demo
+
+$ pack verify /tmp/demo --no-witness
+pack verify: OK
+  pack_id: sha256:abc123...
+```
+
+### Refusal flow (exit 2)
+
+```bash
+$ pack seal /nonexistent/file.json --no-witness
+{
+  "version": "pack.v0",
+  "outcome": "REFUSAL",
+  "refusal": {
+    "code": "E_IO",
+    "message": "Cannot read artifact: /nonexistent/file.json",
+    "detail": null,
+    "next_command": null
+  }
+}
+
+$ echo $?
+2
+```
 
 ## Why pack exists
 
-Without `pack`:
+Without `pack`, evidence is fragmented:
 
-- artifacts live in scattered paths
-- no single manifest binds them
-- no single content ID for the full evidence set
-- verification across the whole bundle is manual and brittle
+- Artifacts live in scattered paths
+- No single manifest binds them together
+- No content-addressed identifier for the full evidence set
+- Verification across the bundle is manual and brittle
 
 With `pack`:
 
-- members are copied byte-for-byte into one closed-set directory
+- Members are copied byte-for-byte into one closed-set directory
 - `manifest.json` binds all members and metadata
 - `pack_id` is deterministic and self-verifiable
-- verification has explicit exit semantics (`OK`, `INVALID`, `REFUSAL`)
-
-## Scope v0.1
-
-### Ship in v0.1
-
-- `pack seal`
-- `pack verify`
-- `pack witness <query|last|count>`
-- deterministic `pack_id` self-hash contract
-- refusal system (`E_EMPTY`, `E_IO`, `E_DUPLICATE`, `E_BAD_PACK`)
-- global flags: `--describe`, `--schema`, `--version`, `--no-witness`
-
-### Deferred in v0.1
-
-- `pack diff`
-- `pack push`
-- `pack pull`
-
-## Quickstart (target flow)
-
-```bash
-# Produce upstream deterministic artifacts
-shape nov.csv dec.csv --key loan_id --json > shape.report.json
-rvl nov.csv dec.csv --key loan_id --json > rvl.report.json
-verify dec.csv --rules rules.json --json > verify.report.json
-
-# Seal into one deterministic evidence pack
-pack seal nov.lock.json dec.lock.json shape.report.json rvl.report.json verify.report.json \
-  --note "Nov→Dec 2025 reconciliation" \
-  --output evidence/2025-12/
-
-# Verify the sealed pack integrity
-pack verify evidence/2025-12/
-
-# Query witness ledger
-pack witness last
-```
+- Verification has explicit exit semantics: `OK`, `INVALID`, `REFUSAL`
 
 ## CLI surface
 
 ```text
 pack <COMMAND> [OPTIONS]
+
+Commands:
+  seal <ARTIFACT>...           Seal artifacts into a pack directory
+  verify <PACK_DIR>            Verify pack integrity
+  witness <query|last|count>   Query witness ledger
+
+  diff <A> <B>                 (deferred in v0.1)
+  push <PACK_DIR>              (deferred in v0.1)
+  pull <PACK_ID> --out DIR     (deferred in v0.1)
+
+Global flags:
+  --describe     Print compiled operator.json, exit 0
+  --schema       Print pack.v0 JSON schema, exit 0
+  --version      Print version, exit 0
+  --no-witness   Suppress witness record writes
 ```
-
-### Commands
-
-```text
-seal <ARTIFACT>...        Seal artifacts into a pack directory
-verify <PACK_DIR>         Verify pack integrity
-witness <query|last|count>
-
-diff <A> <B>              Deferred in v0.1
-push <PACK_DIR>           Deferred in v0.1
-pull <PACK_ID> --out DIR  Deferred in v0.1
-```
-
-### Global flags
-
-- `--describe`: print compiled `operator.json`, exit 0
-- `--schema`: print `pack.v0` schema, exit 0
-- `--version`: print version, exit 0
-- `--no-witness`: suppress witness writes
 
 ## Exit semantics
 
-- `seal`: `0` (`PACK_CREATED`) or `2` (`REFUSAL`)
-- `verify`: `0` (`OK`), `1` (`INVALID`), or `2` (`REFUSAL`)
-- `diff` (deferred): `0` (`NO_CHANGES`), `1` (`CHANGES`), `2` (`REFUSAL`)
-- `push`/`pull` (deferred): `0` success, `2` refusal
+| Command | Exit 0 | Exit 1 | Exit 2 |
+|---------|--------|--------|--------|
+| `seal` | `PACK_CREATED` | — | `REFUSAL` |
+| `verify` | `OK` | `INVALID` | `REFUSAL` |
+
+## v0.1 boundaries
+
+### Ships in v0.1
+
+- `pack seal` — collect, hash, type-detect, seal into closed-set directory
+- `pack verify` — integrity checks, schema validation, deterministic findings
+- `pack witness` — append-only ledger query (`query`, `last`, `count`)
+- Deterministic `pack_id` self-hash contract
+- Refusal system: `E_EMPTY`, `E_IO`, `E_DUPLICATE`, `E_BAD_PACK`
+- Global flags: `--describe`, `--schema`, `--version`, `--no-witness`
+
+### Deferred past v0.1
+
+- `pack diff` — compare two packs
+- `pack push` — upload to data-fabric
+- `pack pull` — download from data-fabric
+
+These commands exist in the CLI surface but exit 2 with a deferred message.
+
+## Witness defaults
+
+By default, `seal` and `verify` append a record to the witness ledger:
+
+| Location | Priority |
+|----------|----------|
+| `$EPISTEMIC_WITNESS` | Checked first |
+| `~/.epistemic/witness.jsonl` | Fallback default |
+
+Key behaviors:
+
+- **Witness failure is non-fatal**: if the ledger is unwritable, a warning prints to stderr but the domain exit code is preserved.
+- **`--no-witness`** suppresses all witness writes for the invocation.
+- **Witness query commands** (`witness query`, `witness last`, `witness count`) do not themselves write witness records.
 
 ## Pack directory contract
 
-`seal` output is a closed-set directory:
+A sealed pack is a closed-set directory:
 
 ```text
-pack/<pack_id>/
+evidence/2025-12/
 ├── manifest.json
-└── <member files...>
+├── nov.lock.json
+├── dec.lock.json
+├── shape.report.json
+└── nested_registry/
+    ├── registry.json
+    └── loans.csv
 ```
 
-Rules:
+Rules enforced by `verify`:
 
-- `manifest.json` must exist
-- `manifest.json` is reserved and cannot be a member path
-- member paths must be safe relative paths (no absolute, no `..`)
-- only declared members plus `manifest.json` are allowed
-- `member_count` must match declared members and actual files
-
-## Manifest contract (`pack.v0`)
-
-Key fields:
-
-- `version`: `pack.v0`
-- `pack_id`: `sha256:<hex>`
-- `created`: RFC3339 UTC
-- `note`: optional
-- `tool_version`
-- `members[]`: path, bytes hash, detected type, optional artifact version
-- `member_count`
+- `manifest.json` must exist and parse as `pack.v0`
+- `manifest.json` is reserved — cannot be a member path
+- Member paths must be safe relative paths (no absolute, no `..`)
+- Only declared members plus `manifest.json` are allowed (no extra files)
+- `member_count` must match the actual members array length
 
 ## Deterministic `pack_id`
 
-`pack_id` is computed as:
+The self-hash contract:
 
-1. construct manifest with `pack_id: ""`
-2. canonicalize JSON deterministically
-3. SHA256 hash canonical bytes
-4. set `pack_id` to `sha256:<hex>`
+1. Construct manifest with `pack_id: ""`
+2. Serialize to canonical JSON (sorted keys, no whitespace)
+3. SHA256 hash the canonical bytes
+4. Set `pack_id` to `sha256:<hex>`
 
-Any change in manifest content changes `pack_id`.
+Any change to manifest content changes `pack_id`.
 
 ## Verify checks
 
-`pack verify` validates:
+`pack verify` runs these checks in order:
 
-1. manifest exists and parses as `pack.v0`
-2. `member_count` is correct
-3. member paths are safe, unique, non-reserved
-4. each member exists as a regular non-symlink file
-5. no extra undeclared files exist
-6. member hashes match
-7. recomputed `pack_id` matches
-8. known member schemas validate when local schema exists
+1. **manifest_parse** — manifest exists and deserializes as `pack.v0`
+2. **member_count** — `member_count` field matches members array length
+3. **member_paths** — paths are unique, safe, and non-reserved
+4. **member_hashes** — each member exists as a regular file with matching SHA256
+5. **extra_members** — no undeclared files beyond `manifest.json`
+6. **pack_id** — recomputed `pack_id` matches the declared value
+7. **schema_validation** — known artifact types validate against local schemas
 
 Outcomes:
 
-- `OK`: all checks pass
-- `INVALID`: integrity/schema failures
-- `REFUSAL`: unreadable/invalid manifest or unrecoverable IO
+- `OK` (exit 0): all checks pass
+- `INVALID` (exit 1): one or more integrity or schema findings
+- `REFUSAL` (exit 2): manifest unreadable, unparseable, or unsupported version
 
 ## Refusal codes
 
-- `E_EMPTY`: no artifacts provided to `seal`
-- `E_IO`: read/write/path IO failure
-- `E_DUPLICATE`: member path collision (including reserved path)
-- `E_BAD_PACK`: invalid or unreadable manifest for verify/diff/push
+| Code | Meaning |
+|------|---------|
+| `E_EMPTY` | No artifacts provided to `seal` |
+| `E_IO` | Read/write/path IO failure |
+| `E_DUPLICATE` | Member path collision (including reserved path) |
+| `E_BAD_PACK` | Invalid or unreadable manifest |
 
-## Witness integration
-
-- `seal` and `verify` append witness records by default
-- `--no-witness` suppresses witness append
-- witness append failure does not change domain exit semantics
-
-## Installation
-
-While `pack` is in active buildout, use source builds:
+## Development
 
 ```bash
-cargo build
-cargo run -- --help
+cargo build                          # Debug build
+cargo build --release                # Release build
+cargo test -- --test-threads=1       # All tests (single-threaded for witness tests)
+cargo clippy --all-targets           # Lint
+cargo fmt --check                    # Format check
 ```
 
-Release packaging and distribution are tracked in the plan/beads backlog.
+## Project structure
+
+```text
+src/
+├── main.rs          Entry point
+├── lib.rs           CLI dispatch
+├── cli/             Clap argument parsing, exit codes
+├── seal/            Seal pipeline: collect, collision, copy, finalize, manifest
+├── verify/          Verify pipeline: checks, schema validation, report
+├── detect/          Member type detection
+├── refusal/         Refusal codes and envelope
+├── witness/         Witness ledger append/query
+├── operator.rs      --describe output
+└── schema.rs        --schema output
+
+tests/
+├── cli_scaffold.rs      CLI surface integration tests
+├── seal_suite.rs        Seal contract integration tests
+├── verify_suite.rs      Verify contract integration tests
+├── refusal_suite.rs     Refusal envelope integration tests
+├── schema_validation.rs Schema validation integration tests
+└── witness_suite.rs     Witness behavior integration tests
+
+fixtures/
+├── artifacts/       Raw input artifacts for seal
+├── packs/           Pre-built pack fixtures (valid + 4 invalid variants)
+└── schema/          Type detection validation fixtures
+```

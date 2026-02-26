@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --check
+      - name: Reproduction hint
+        if: failure()
+        run: |
+          echo "Format check failed. Run locally with: cargo fmt"
+
+  clippy:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-clippy-
+      - run: cargo clippy --all-targets -- -D warnings
+      - name: Reproduction hint
+        if: failure()
+        run: |
+          echo "Clippy failed. Run locally with: cargo clippy --all-targets -- -D warnings"
+
+  unit-test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-test-
+      - run: cargo test --lib -- --test-threads=1
+      - name: Reproduction hint
+        if: failure()
+        run: |
+          echo "Unit tests failed. Run locally with: cargo test --lib -- --test-threads=1"
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-integration-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-integration-
+      - run: cargo test --tests -- --test-threads=1
+      - name: Reproduction hint
+        if: failure()
+        run: |
+          echo "Integration tests failed. Run locally with: cargo test --tests -- --test-threads=1"
+
+  smoke:
+    name: CLI Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-smoke-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-smoke-
+      - name: Build release binary
+        run: cargo build --release
+      - name: Smoke - version
+        run: ./target/release/pack --version
+      - name: Smoke - describe
+        run: ./target/release/pack --describe
+      - name: Smoke - schema
+        run: ./target/release/pack --schema
+      - name: Smoke - seal + verify round-trip
+        run: |
+          ./target/release/pack seal fixtures/artifacts/nov.lock.json fixtures/artifacts/rules.json \
+            --output /tmp/smoke-pack --no-witness
+          ./target/release/pack verify /tmp/smoke-pack --no-witness
+      - name: Smoke - verify invalid pack
+        run: |
+          ./target/release/pack verify fixtures/packs/tampered_member --no-witness && exit 1 || test $? -eq 1
+      - name: Smoke - witness commands
+        run: |
+          export EPISTEMIC_WITNESS=$(mktemp)
+          ./target/release/pack witness query
+          ./target/release/pack witness last
+          ./target/release/pack witness count
+      - name: Reproduction hint
+        if: failure()
+        run: |
+          echo "CLI smoke tests failed. Build with: cargo build --release"
+          echo "Then run the smoke commands manually from the workflow steps above."
+
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [fmt, clippy, unit-test, integration, smoke]
+    steps:
+      - name: Check all required lanes
+        run: |
+          echo "fmt:         ${{ needs.fmt.result }}"
+          echo "clippy:      ${{ needs.clippy.result }}"
+          echo "unit-test:   ${{ needs.unit-test.result }}"
+          echo "integration: ${{ needs.integration.result }}"
+          echo "smoke:       ${{ needs.smoke.result }}"
+
+          if [ "${{ needs.fmt.result }}" != "success" ] || \
+             [ "${{ needs.clippy.result }}" != "success" ] || \
+             [ "${{ needs.unit-test.result }}" != "success" ] || \
+             [ "${{ needs.integration.result }}" != "success" ] || \
+             [ "${{ needs.smoke.result }}" != "success" ]; then
+            echo "One or more required CI lanes failed."
+            exit 1
+          fi
+          echo "All CI lanes passed."

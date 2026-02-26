@@ -1,0 +1,7 @@
+schema_version: 1
+profile_id: loan_tape_v2
+fields:
+  - name: loan_id
+    type: string
+  - name: balance
+    type: decimal

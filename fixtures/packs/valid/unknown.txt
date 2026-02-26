@@ -1,0 +1,2 @@
+This is a plain text file with no recognized version marker.
+It should be detected as type "other".
