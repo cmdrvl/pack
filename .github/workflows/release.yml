@@ -168,14 +168,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts/
-
-      - name: Flatten artifact directories
-        shell: bash
-        run: |
-          cd artifacts
-          find . -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec mv {} . \;
-          find . -type d -empty -delete
-          ls -la
+          merge-multiple: true
 
       - name: Generate SHA256SUMS
         shell: bash
