@@ -1,25 +1,176 @@
 # AGENTS.md — pack
 
-Guidelines for AI coding agents working in this repository.
+> Guidelines for AI coding agents working in this Rust codebase.
 
-## RULE 0 - USER OVERRIDE
+---
 
-If the user gives a direct instruction, follow it even if this file suggests otherwise.
+## pack — What This Project Does
 
-## RULE 1 - NO FILE DELETION
+`pack` seals lockfiles, reports, rules, and registry artifacts into one immutable, self-verifiable evidence pack with a deterministic content-addressed `pack_id`.
 
-Do not delete files or directories without explicit user approval in the same thread.
+Pipeline position:
 
-## Irreversible Actions (forbidden without explicit approval)
+```
+vacuum → hash → fingerprint → lock → pack
+```
 
-Never run destructive operations unless the user explicitly authorizes the exact command:
+### Quick Reference
 
-- `git reset --hard`
-- `git clean -fd`
-- `rm -rf`
-- broad checkout/revert commands
+```bash
+# Core workflow
+pack seal nov.lock.json dec.lock.json rules.json --output evidence/2025-12/
+pack verify evidence/2025-12/
+pack diff evidence/2025-11/ evidence/2025-12/
 
-If unsure, stop and ask.
+# Quality gate
+cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test -- --test-threads=1
+```
+
+Note: `--test-threads=1` is required because witness tests manipulate the `EPISTEMIC_WITNESS` env var and cannot run in parallel.
+
+### Source of Truth
+
+- **Spec:** [`docs/plan.md`](./docs/plan.md) — behavior must follow this document.
+- Do not invent behavior not present in the plan.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/main.rs` | CLI entry + exit code mapping |
+| `src/lib.rs` | Central dispatch, CLI parsing, command routing |
+| `src/cli/` | Clap argument parsing, exit codes |
+| `src/seal/` | Seal pipeline: collect, collision, copy, finalize, manifest |
+| `src/verify/` | Verify pipeline: checks, schema validation, report |
+| `src/diff/` | Diff pipeline: compare manifests, report |
+| `src/detect/` | Member type detection from content |
+| `src/refusal/` | Refusal codes and envelope |
+| `src/witness/` | Witness ledger append/query |
+| `src/operator.rs` | `--describe` output |
+| `src/schema.rs` | `--schema` output |
+
+---
+
+## RULE 0 — USER OVERRIDE
+
+If the user gives a direct instruction, follow it even if it conflicts with defaults in this file.
+
+---
+
+## Output Contract (Critical)
+
+`pack` has three commands with distinct exit semantics:
+
+| Command | Exit 0 | Exit 1 | Exit 2 |
+|---------|--------|--------|--------|
+| `seal` | `PACK_CREATED` | — | `REFUSAL` |
+| `verify` | `OK` | `INVALID` | `REFUSAL` |
+| `diff` | `NO_CHANGES` | `CHANGES` | `REFUSAL` |
+
+- `seal` outputs human text on success, refusal JSON envelope on failure.
+- `verify` outputs human or `--json` report.
+- `diff` outputs human or `--json` report.
+- `--describe` and `--schema` short-circuit before normal input validation.
+
+---
+
+## Core Invariants (Do Not Break)
+
+### 1. `pack_id` self-hash contract
+
+- Construct manifest with `pack_id: ""`
+- Serialize to canonical JSON (sorted keys, no whitespace)
+- SHA-256 hash the canonical bytes
+- Set `pack_id` to `sha256:<hex>`
+
+### 2. Closed-set directory semantics
+
+- Only declared members plus `manifest.json` are allowed.
+- Member paths must be safe relative paths (no absolute, no `..`).
+- `manifest.json` is reserved — cannot be a member path.
+- `member_count` must match the actual members array length.
+
+### 3. Refusal envelope semantics
+
+- Refusal codes: `E_EMPTY`, `E_IO`, `E_DUPLICATE`, `E_BAD_PACK`.
+- Refusals emit structured JSON on stdout, exit code 2.
+- Envelope includes `version`, `outcome`, `refusal.code`, `refusal.message`.
+
+### 4. Verify outcomes
+
+- `OK` (exit 0): all integrity checks pass.
+- `INVALID` (exit 1): one or more findings with codes like `MISSING_MEMBER`, `HASH_MISMATCH`, `PACK_ID_MISMATCH`, `EXTRA_MEMBER`.
+- `REFUSAL` (exit 2): manifest unreadable, unparseable, or unsupported version.
+
+### 5. Schema validation
+
+- Known artifact types are validated against local schemas.
+- Outcomes: `pass`, `fail`, `skipped`.
+- Schema failures produce `SCHEMA_VIOLATION` findings in verify report.
+
+### 6. Witness parity
+
+Ambient witness semantics must match spine conventions:
+- Append by default to `$EPISTEMIC_WITNESS` or `~/.epistemic/witness.jsonl`.
+- `--no-witness` opt-out.
+- Witness failures do not mutate domain outcome semantics (non-fatal).
+- Witness query subcommands supported (`query`, `last`, `count`).
+
+---
+
+## Toolchain
+
+- **Language:** Rust, Cargo only.
+- **Edition:** 2021.
+- **Dependencies:** clap 4, serde 1, serde_json 1, sha2 0.10, hex 0.4, chrono 0.4, tempfile 3.
+
+---
+
+## Quality Gate
+
+Run after any substantive change:
+
+```bash
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test -- --test-threads=1
+```
+
+### Test Suites
+
+| Suite | File | Tests |
+|-------|------|-------|
+| CLI scaffold | `tests/cli_scaffold.rs` | 14 |
+| Seal contract | `tests/seal_suite.rs` | 12 |
+| Verify contract | `tests/verify_suite.rs` | 17 |
+| Refusal envelope | `tests/refusal_suite.rs` | 9 |
+| Schema validation | `tests/schema_validation.rs` | 4 |
+| Witness behavior | `tests/witness_suite.rs` | 15 |
+| Unit tests | `src/**` | 112 |
+| **Total** | | **183** |
+
+---
+
+## Git and Release
+
+- **Primary branch:** `main`.
+- Bump `Cargo.toml` semver appropriately on release.
+- Release triggered by pushing `v*` tags.
+- CI runs fmt, clippy, unit, integration, smoke, ci-success.
+- Release builds 5 targets (linux x86/arm, macOS x86/arm, windows).
+
+---
+
+## Editing Rules
+
+- **No file deletion** without explicit written user permission.
+- **No destructive git commands** (`reset --hard`, `clean -fd`, `rm -rf`, force push) without explicit authorization.
+- **No scripted mass edits** — make intentional, reviewable changes.
+- **No file proliferation** — edit existing files; create new files only for real new functionality.
+- **No surprise behavior** — do not invent behavior not in `docs/plan.md`.
+- **No backwards-compatibility shims** unless explicitly requested.
+
+---
 
 ## Main-Only Execution (No Worktrees by Default)
 
@@ -28,117 +179,72 @@ For this repo, default to working on `main` in the primary working tree.
 - Do not spawn or use `--worktrees` unless the user explicitly asks for worktree isolation.
 - If worktrees are active from an older session, call that out before making further edits.
 
-## Kickoff Checklist (mandatory)
+---
 
-Before writing any code:
+## Beads (`br`) Workflow
 
-1. **Read `AGENTS.md` fully.** You are reading it now.
-2. **Read `README.md` fully.** Understand the pack contract, exit semantics, and v0.1 scope.
-3. **Read `docs/plan.md`** for contract-level behavior and boundaries.
-4. **Run `br ready`** to see unblocked beads sorted by priority.
-5. **Claim one bead:**
-   ```bash
-   br update <id> --status in_progress
-   br show <id>
-   ```
-6. **Start implementation immediately.** Do not ask for confirmation to begin.
+Use Beads as source of truth for task state.
 
-After completing a bead:
+```bash
+br ready              # Show unblocked ready work
+br list --status=open # All open issues
+br show <id>          # Full issue details
+br update <id> --status=in_progress
+br close <id> --reason "Completed"
+br sync --flush-only  # Export to JSONL (no git ops)
+```
 
-1. Verify acceptance criteria are met.
-2. Run quality checks: `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test -- --test-threads=1`
-3. Close the bead: `br update <id> --status closed`
-4. Run `br ready` again and claim the next unblocked bead.
+### Kickoff Loop
+
+1. Run `br ready` to see unblocked beads sorted by priority.
+2. Claim one bead: `br update <id> --status in_progress`
+3. Read the bead: `br show <id>`
+4. Start implementation immediately — do not ask for confirmation.
+5. Verify acceptance criteria are met.
+6. Run quality gate.
+7. Close: `br update <id> --status closed`
+8. Run `br ready` again and claim the next unblocked bead.
 
 Avoid communication purgatory: if blocked, claim another ready bead and continue.
 
-## Bead Discipline
+---
 
-- Keep status current (`in_progress`, `blocked`, `closed`).
-- Close beads only when acceptance criteria are actually satisfied.
-- Post concise start/finish coordination updates with bead ID.
-- If waiting, always pick next unblocked ready bead.
+## Multi-Agent Coordination
 
-## File Reservation Policy (strict)
+### File Reservation Policy (strict)
 
-When multiple agents work concurrently, file reservations prevent conflicts.
+When multiple agents work concurrently, reserve only exact files you are actively editing.
 
-**Reserve only exact files you are actively editing.**
+Allowed: `src/seal/collect.rs`, `tests/seal_suite.rs`, `README.md`
+Forbidden: `src/**`, `src/seal/`, `tests/**`
 
-Allowed reservations:
+Release reservations as soon as your edits are complete.
 
-- `Cargo.toml` — you are adding a dependency
-- `src/seal/collect.rs` — you are implementing collection logic
-- `src/verify/schema.rs` — you are adding schema validation
-- `tests/seal_suite.rs` — you are writing seal integration tests
-- `README.md` — you are updating documentation
+### Concurrent Edit Protocol
 
-Forbidden reservations:
+Expect concurrent local edits from other agents.
 
-- `src/**` — too broad, blocks other agents from all source files
-- `src/seal/` — directory-level claim blocks the whole module
-- `tests/**` — blocks all test files
-- `**/*` — claims the entire repo
+1. Never assume a clean working tree.
+2. Never use destructive commands to force a clean state.
+3. If you encounter unexpected changes in a file you need, check if another agent has reserved it.
+4. Resolve conflicts surgically — fix only the conflicting region.
+5. Do not reformat or reorganize files you did not change.
 
-**Release reservations as soon as your edits are complete.** Do not hold files between beads.
+### Agent Mail
 
-## Concurrent Edit Protocol
+When Agent Mail is available:
+- Register identity in this project.
+- Send start/finish updates per bead.
+- Poll inbox regularly and acknowledge `ack_required` messages promptly.
 
-**Expect concurrent local edits from other agents.** This is normal in multi-agent workflows.
+---
 
-Rules:
+## Session Completion
 
-1. **Never assume a clean working tree.** Other agents may have uncommitted changes in files you don't own.
-2. **Never use destructive commands to force a clean state:**
-   - No `git checkout .`
-   - No `git clean -fd`
-   - No `git stash` on someone else's work
-   - No `rm -rf` on directories you don't own
-3. **If you encounter unexpected changes in a file you need to edit:**
-   - Check if another agent has reserved it. If so, skip or wait.
-   - If unreserved, make your edit surgically (targeted `Edit` tool, not full file rewrites).
-4. **Resolve conflicts surgically.** If a merge conflict appears in a file you own, fix only the conflicting region and continue.
-5. **Do not reformat or reorganize files you did not change.** Stick to your bead's scope.
+Before ending a session:
 
-## Toolchain and Quality Checks
-
-Rust/Cargo only.
-
-After substantive changes, run:
-
-```bash
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test -- --test-threads=1
-```
-
-Note: `--test-threads=1` is required because witness tests manipulate the `EPISTEMIC_WITNESS` env var and cannot run in parallel.
-
-If tests do not exist yet for a touched module, add focused tests or clearly note the gap.
-
-## pack Contract Guardrails
-
-Follow `docs/plan.md` as source of truth.
-
-Critical behavior to preserve:
-
-- deterministic `pack_id` self-hash contract
-- closed-set pack directory semantics
-- refusal envelope semantics (`E_EMPTY`, `E_IO`, `E_DUPLICATE`, `E_BAD_PACK`)
-- verify outcomes and exit mapping (`OK`, `INVALID`, `REFUSAL`)
-- witness behavior (`--no-witness`, append semantics, non-fatal failures)
-- schema validation outcomes (`pass`, `fail`, `skipped`)
-
-Do not invent behavior outside the plan without explicit user approval.
-
-## Output and CLI Semantics
-
-- Keep outputs deterministic and stable.
-- Respect command exit codes exactly as specified.
-- `--describe` and `--schema` must short-circuit before normal input validation.
-
-## Commit Hygiene
-
-- Keep commits scoped to one logical bead when possible.
-- Do not bundle unrelated refactors.
-- Do not amend commits unless the user asks.
+1. Run quality gate (`fmt` + `clippy` + `test`).
+2. Confirm docs/spec alignment for behavior changes.
+3. Commit with precise message.
+4. Push `main`.
+5. Summarize: what changed, what was validated, remaining risks.
