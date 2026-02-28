@@ -3,10 +3,12 @@ use serde_json::{json, Value};
 /// Return the compiled-in operator manifest for `--describe`.
 pub fn operator_json() -> Value {
     json!({
-        "name": "pack",
         "schema_version": "operator.v0",
+        "name": "pack",
         "version": env!("CARGO_PKG_VERSION"),
         "description": "Seal lockfiles, reports, rules, and registry artifacts into one immutable, self-verifiable evidence pack.",
+        "repository": "https://github.com/cmdrvl/pack",
+        "license": "MIT",
         "agent_guide": "https://github.com/cmdrvl/.github/blob/main/profile/AGENT_PROMPT.md",
         "output_mode": "mixed",
         "subcommands": {
