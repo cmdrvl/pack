@@ -7,6 +7,7 @@ pub fn operator_json() -> Value {
         "schema_version": "operator.v0",
         "version": env!("CARGO_PKG_VERSION"),
         "description": "Seal lockfiles, reports, rules, and registry artifacts into one immutable, self-verifiable evidence pack.",
+        "agent_guide": "https://github.com/cmdrvl/.github/blob/main/profile/AGENT_PROMPT.md",
         "output_mode": "mixed",
         "subcommands": {
             "seal": {
