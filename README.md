@@ -6,9 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub release](https://img.shields.io/github/v/release/cmdrvl/pack)](https://github.com/cmdrvl/pack/releases)
 
-**Immutable evidence packs — seal lockfiles, reports, rules, and registry artifacts into one self-verifiable, content-addressed directory.**
-
-No AI. No inference. Pure deterministic sealing, hashing, and verification.
+**The pipeline produced the evidence. pack seals it shut.**
 
 ```bash
 brew install cmdrvl/tap/pack
@@ -18,24 +16,16 @@ brew install cmdrvl/tap/pack
 
 ---
 
-## TL;DR
+You've run the full pipeline: vacuum, hash, fingerprint, lock, shape, rvl. You have a lockfile, a shape report, an rvl report, and a mapping artifact. Four JSON files in a directory. If an auditor asks for the evidence — you zip them and email them? What if someone edits a file after you sent it? What if you need to prove, six months later, that nothing changed?
 
-**The Problem**: After a pipeline produces lockfiles, reports, and rules, evidence is fragmented — artifacts live in scattered paths, nothing binds them together, and there's no content-addressed identifier for the full evidence set. Verification across the bundle is manual and brittle.
+**pack seals artifacts into one immutable, content-addressed evidence pack with a single verifiable ID.** One command to seal. One command to verify, bit-for-bit. The `pack_id` is the SHA-256 of the canonical manifest — if any member is added, removed, or modified, the ID changes. No undeclared files allowed. No ambiguity about what's inside.
 
-**The Solution**: One command that collects artifacts into a closed-set directory with a `manifest.json`, computes a deterministic `pack_id` via self-hash, and produces an immutable evidence pack. Another command verifies it bit-for-bit.
+### What makes this different
 
-### Why Use pack?
-
-| Feature | What It Does |
-|---------|--------------|
-| **Self-verifiable** | `pack_id` is the SHA-256 of canonical manifest with `pack_id=""` — any change invalidates it |
-| **Closed-set** | Only declared members plus `manifest.json` allowed — no undeclared files |
-| **Deterministic** | Same artifacts always produce the same `pack_id` and manifest |
-| **Type detection** | Auto-classifies lockfiles, reports, rules, profiles, registries from content |
-| **Schema validation** | Verifies known artifact types against local schemas |
-| **Structured outcomes** | `OK` / `INVALID` / `REFUSAL` with machine-readable JSON reports |
-| **Diff** | Deterministic comparison of two pack manifests — added, removed, changed members |
-| **Audit trail** | Every seal and verify recorded in the ambient witness ledger |
+- **Closed-set enforcement** — only declared members plus `manifest.json` are allowed in the pack directory. Extra files cause verification failure. Nothing sneaks in.
+- **Content-addressed ID** — `pack_id` is a Merkle-root-like SHA-256 of the canonical manifest. Same artifacts always produce the same ID. Any change — even to one byte of one member — produces a different ID.
+- **Artifact type detection** — pack auto-classifies members as lockfiles, reports, profiles, or registries from their content. Known types are validated against local schemas during verification.
+- **Diff between packs** — `pack diff evidence/nov/ evidence/dec/` shows exactly which members were added, removed, or changed between two evidence sets.
 
 ---
 
