@@ -27,6 +27,9 @@ pub fn detect_member_type(content: &[u8], path: &str) -> MemberTypeResult {
         if let Some(result) = detect_from_yaml(text) {
             return result;
         }
+        if let Some(result) = detect_fingerprint_yaml(text, path) {
+            return result;
+        }
     }
 
     // Registry heuristic by filename.
@@ -89,6 +92,39 @@ fn detect_from_yaml(text: &str) -> Option<MemberTypeResult> {
         Some(MemberTypeResult {
             member_type: "profile".to_string(),
             artifact_version: None,
+        })
+    } else {
+        None
+    }
+}
+
+/// Detect fingerprint YAML definitions (`.fp.yaml` / `.fp.yml` extension or
+/// YAML containing `fingerprint_id:` + `assertions:` keys).
+fn detect_fingerprint_yaml(text: &str, path: &str) -> Option<MemberTypeResult> {
+    let basename = path.rsplit('/').next().unwrap_or(path);
+
+    // Extension-based detection: *.fp.yaml or *.fp.yml
+    let by_extension = basename.ends_with(".fp.yaml") || basename.ends_with(".fp.yml");
+
+    // Content-based detection: fingerprint_id + assertions keys
+    let has_fingerprint_id = text
+        .lines()
+        .any(|l| l.trim().starts_with("fingerprint_id:"));
+    let has_assertions = text.lines().any(|l| l.trim().starts_with("assertions:"));
+    let by_content = has_fingerprint_id && has_assertions;
+
+    if by_extension || by_content {
+        // Try to extract fingerprint_id value for artifact_version
+        let artifact_version = text
+            .lines()
+            .find(|l| l.trim().starts_with("fingerprint_id:"))
+            .and_then(|l| l.trim().strip_prefix("fingerprint_id:"))
+            .map(|v| v.trim().trim_matches('"').trim_matches('\'').to_string())
+            .filter(|v| !v.is_empty());
+
+        Some(MemberTypeResult {
+            member_type: "fingerprint".to_string(),
+            artifact_version,
         })
     } else {
         None
@@ -199,6 +235,39 @@ mod tests {
         let content = b"data";
         let result = detect_member_type(content, "registry/loans.csv");
         assert_eq!(result.member_type, "registry");
+    }
+
+    #[test]
+    fn detects_fingerprint_yaml_by_extension() {
+        let content = b"fingerprint_id: cbre-appraisal.v1\nformat: pdf\nassertions:\n  - page_count: { min: 50 }";
+        let result = detect_member_type(content, "cbre-appraisal.v1.fp.yaml");
+        assert_eq!(result.member_type, "fingerprint");
+        assert_eq!(
+            result.artifact_version.as_deref(),
+            Some("cbre-appraisal.v1")
+        );
+    }
+
+    #[test]
+    fn detects_fingerprint_yaml_by_content() {
+        let content = b"fingerprint_id: csv.v0\nformat: csv\nassertions:\n  - filename_regex: { pattern: \".*\\.csv$\" }";
+        let result = detect_member_type(content, "definitions/csv.yaml");
+        assert_eq!(result.member_type, "fingerprint");
+        assert_eq!(result.artifact_version.as_deref(), Some("csv.v0"));
+    }
+
+    #[test]
+    fn detects_fingerprint_yml_extension() {
+        let content = b"fingerprint_id: test.v1\nassertions:\n  - sheet_exists: Data";
+        let result = detect_member_type(content, "test.fp.yml");
+        assert_eq!(result.member_type, "fingerprint");
+    }
+
+    #[test]
+    fn fingerprint_yaml_without_id_or_assertions_falls_to_other() {
+        let content = b"format: csv\nsome_key: value";
+        let result = detect_member_type(content, "not-a-fingerprint.yaml");
+        assert_eq!(result.member_type, "other");
     }
 
     #[test]

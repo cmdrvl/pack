@@ -60,7 +60,7 @@ $ pack witness last
 2026-02-25T12:00:00.000Z verify OK -
 
 # Full pipeline from scan to sealed pack
-$ vacuum /data/dec | hash | lock --dataset-id "dec" > dec.lock.json
+$ vacuum /data/dec | hashbytes | lock --dataset-id "dec" > dec.lock.json
 $ pack seal dec.lock.json shape.report.json --output evidence/dec/
 ```
 
@@ -71,8 +71,8 @@ $ pack seal dec.lock.json shape.report.json --output evidence/dec/
 `pack` is the **final tool** in the stream pipeline — it seals everything into an immutable evidence set.
 
 ```
-vacuum  →  hash  →  fingerprint  →  lock  →  pack
-(scan)    (hash)    (template)     (pin)    (seal)
+vacuum  →  hashbytes  →  fingerprint  →  lock  →  pack
+(scan)    (hashbytes)    (template)     (pin)    (seal)
 ```
 
 Upstream tools produce individual artifacts (lockfiles, reports). `pack` collects them into a single verifiable bundle with a content-addressed identifier.

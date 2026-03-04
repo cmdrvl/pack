@@ -11,7 +11,7 @@
 Pipeline position:
 
 ```
-vacuum → hash → fingerprint → lock → pack
+vacuum → hashbytes → fingerprint → lock → pack
 ```
 
 ### Quick Reference
