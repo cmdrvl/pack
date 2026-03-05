@@ -251,3 +251,95 @@ jobs:
           echo "  1. Tag ${{ needs.validate.outputs.tag }} exists"
           echo "  2. GitHub token has contents:write permission"
           echo "  3. Artifacts downloaded correctly (check build job)"
+
+  update-homebrew:
+    name: Update Homebrew tap
+    runs-on: ubuntu-latest
+    needs: [validate, publish]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download SHA256SUMS from release
+        run: |
+          VERSION="${{ needs.validate.outputs.tag }}"
+          curl -fsSL "https://github.com/cmdrvl/pack/releases/download/${VERSION}/SHA256SUMS" -o SHA256SUMS
+
+      - name: Generate formula
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib
+          import textwrap
+
+          version = "${{ needs.validate.outputs.tag }}"
+          bare = "${{ needs.validate.outputs.version }}"
+
+          sums = {}
+          for line in pathlib.Path("SHA256SUMS").read_text().strip().splitlines():
+              digest, name = line.split(maxsplit=1)
+              sums[name.strip()] = digest
+
+          targets = {
+              "aarch64-apple-darwin": ("on_macos", "on_arm"),
+              "x86_64-apple-darwin": ("on_macos", "on_intel"),
+              "aarch64-unknown-linux-gnu": ("on_linux", "on_arm"),
+              "x86_64-unknown-linux-gnu": ("on_linux", "on_intel"),
+          }
+
+          blocks = []
+          current_os = None
+          for target, (os_block, arch_block) in targets.items():
+              asset = f"pack-{bare}-{target}.tar.gz"
+              sha = sums.get(asset, "MISSING")
+              if os_block != current_os:
+                  if current_os is not None:
+                      blocks.append("  end")
+                  blocks.append(f"\n  {os_block} do")
+                  current_os = os_block
+              blocks.append(f"    {arch_block} do")
+              blocks.append(f'      url "https://github.com/cmdrvl/pack/releases/download/{version}/{asset}"')
+              blocks.append(f'      sha256 "{sha}"')
+              blocks.append(f"    end")
+          blocks.append("  end")
+
+          formula = textwrap.dedent(f'''\
+          # typed: false
+          # frozen_string_literal: true
+
+          class Pack < Formula
+            desc "Seal artifacts into immutable, self-verifiable evidence packs"
+            homepage "https://github.com/cmdrvl/pack"
+            version "{bare}"
+            license "MIT"
+          {"".join(chr(10) + l for l in blocks)}
+
+            def install
+              bin.install "pack"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{{bin}}/pack --version")
+            end
+          end
+          ''')
+
+          pathlib.Path("pack.rb").write_text(formula)
+          PYEOF
+
+      - name: Push formula to tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/cmdrvl/homebrew-tap.git" tap
+          cp pack.rb tap/Formula/pack.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "No changes to formula"
+          else
+            git add Formula/pack.rb
+            git commit -m "pack ${{ needs.validate.outputs.tag }}"
+            git push
+          fi
