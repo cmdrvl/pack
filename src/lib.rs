@@ -92,6 +92,17 @@ pub fn run() -> u8 {
         }
         Command::Diff { a, b, json } => {
             let (output, exit_code) = diff::execute_diff(&a, &b, json);
+            if !no_witness {
+                let outcome = match exit_code {
+                    0 => "NO_CHANGES",
+                    1 => "CHANGES",
+                    _ => "REFUSAL",
+                };
+                let record = witness::WitnessRecord::new("diff", outcome, None);
+                if let Err(e) = witness::append_witness(&record) {
+                    eprintln!("pack: witness append warning: {e}");
+                }
+            }
             println!("{output}");
             exit_code
         }

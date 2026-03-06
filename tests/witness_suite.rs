@@ -11,6 +11,35 @@ fn pack_cmd_with_witness(ledger_path: &str) -> Command {
     cmd
 }
 
+fn seal_temp_pack(
+    root: &std::path::Path,
+    artifact_name: &str,
+    content: &str,
+) -> std::path::PathBuf {
+    let artifact = root.join(artifact_name);
+    std::fs::write(&artifact, content).unwrap();
+    let output_dir = root.join(format!("{artifact_name}.pack"));
+
+    let output = pack_cmd()
+        .args([
+            "--no-witness",
+            "seal",
+            artifact.to_str().unwrap(),
+            "--output",
+            output_dir.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "seal should succeed when creating diff fixtures: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    output_dir
+}
+
 // ---------------------------------------------------------------------------
 // Witness append: seal records PACK_CREATED
 // ---------------------------------------------------------------------------
@@ -107,6 +136,27 @@ fn verify_invalid_records_witness() {
     assert_eq!(record["outcome"], "INVALID");
 }
 
+/// Diff with changes records CHANGES witness.
+#[test]
+fn diff_changes_records_witness() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ledger = tmp.path().join("witness.jsonl");
+    let pack_a = seal_temp_pack(tmp.path(), "a.json", r#"{"version":"lock.v0","rows":1}"#);
+    let pack_b = seal_temp_pack(tmp.path(), "b.json", r#"{"version":"lock.v0","rows":2}"#);
+
+    let output = pack_cmd_with_witness(ledger.to_str().unwrap())
+        .args(["diff", pack_a.to_str().unwrap(), pack_b.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+
+    let content = std::fs::read_to_string(&ledger).unwrap();
+    let record: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
+    assert_eq!(record["command"], "diff");
+    assert_eq!(record["outcome"], "CHANGES");
+    assert!(record["pack_id"].is_null());
+}
+
 /// Refusal verify records REFUSAL witness.
 #[test]
 fn verify_refusal_records_witness() {
@@ -122,6 +172,24 @@ fn verify_refusal_records_witness() {
     let content = std::fs::read_to_string(&ledger).unwrap();
     let record: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
     assert_eq!(record["command"], "verify");
+    assert_eq!(record["outcome"], "REFUSAL");
+}
+
+/// Refusal diff records REFUSAL witness.
+#[test]
+fn diff_refusal_records_witness() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ledger = tmp.path().join("witness.jsonl");
+
+    let output = pack_cmd_with_witness(ledger.to_str().unwrap())
+        .args(["diff", "/nonexistent/pack", "fixtures/packs/valid"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+
+    let content = std::fs::read_to_string(&ledger).unwrap();
+    let record: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
+    assert_eq!(record["command"], "diff");
     assert_eq!(record["outcome"], "REFUSAL");
 }
 
@@ -163,6 +231,31 @@ fn no_witness_flag_suppresses_verify_append() {
         .output()
         .unwrap();
     assert!(output.status.success());
+    assert!(!ledger.exists(), "Witness ledger should not be created");
+}
+
+/// --no-witness on diff suppresses witness append.
+#[test]
+fn no_witness_flag_suppresses_diff_append() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ledger = tmp.path().join("witness.jsonl");
+    let pack_a = seal_temp_pack(tmp.path(), "left.json", r#"{"version":"lock.v0","rows":1}"#);
+    let pack_b = seal_temp_pack(
+        tmp.path(),
+        "right.json",
+        r#"{"version":"lock.v0","rows":2}"#,
+    );
+
+    let output = pack_cmd_with_witness(ledger.to_str().unwrap())
+        .args([
+            "--no-witness",
+            "diff",
+            pack_a.to_str().unwrap(),
+            pack_b.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
     assert!(!ledger.exists(), "Witness ledger should not be created");
 }
 
@@ -220,6 +313,37 @@ fn witness_failure_preserves_verify_domain_outcome() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("OK"));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("witness append warning"),
+        "stderr should warn about witness failure: {stderr}"
+    );
+}
+
+/// When witness path is unwritable, diff still reports CHANGES (exit 1) with warning.
+#[test]
+fn witness_failure_preserves_diff_domain_outcome() {
+    let tmp = tempfile::tempdir().unwrap();
+    let pack_a = seal_temp_pack(
+        tmp.path(),
+        "diff-a.json",
+        r#"{"version":"lock.v0","rows":1}"#,
+    );
+    let pack_b = seal_temp_pack(
+        tmp.path(),
+        "diff-b.json",
+        r#"{"version":"lock.v0","rows":2}"#,
+    );
+
+    let output = pack_cmd()
+        .env("EPISTEMIC_WITNESS", "/dev/null/impossible/witness.jsonl")
+        .args(["diff", pack_a.to_str().unwrap(), pack_b.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("CHANGES"));
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(

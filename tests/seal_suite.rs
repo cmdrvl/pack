@@ -49,11 +49,13 @@ fn seal_fixtures_produces_golden_manifest() {
     let golden_val: serde_json::Value = serde_json::from_str(&golden).unwrap();
     let produced_val: serde_json::Value = serde_json::from_str(&produced).unwrap();
 
-    // Member ordering and content must match exactly
+    // Member ordering and content must match exactly. The golden fixture may
+    // have been sealed by an older pack release, so tool_version should track
+    // the current binary rather than the historical fixture.
     assert_eq!(golden_val["version"], produced_val["version"]);
     assert_eq!(golden_val["member_count"], produced_val["member_count"]);
     assert_eq!(golden_val["note"], produced_val["note"]);
-    assert_eq!(golden_val["tool_version"], produced_val["tool_version"]);
+    assert_eq!(produced_val["tool_version"], env!("CARGO_PKG_VERSION"));
 
     // Members array must be identical (same order, same hashes, same types)
     assert_eq!(golden_val["members"], produced_val["members"]);
