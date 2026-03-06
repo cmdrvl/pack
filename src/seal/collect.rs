@@ -1,5 +1,6 @@
+use std::ffi::OsStr;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::refusal::{RefusalCode, RefusalEnvelope};
 
@@ -19,6 +20,54 @@ fn refusal(
     detail: Option<serde_json::Value>,
 ) -> Box<RefusalEnvelope> {
     Box::new(RefusalEnvelope::new(code, message, detail))
+}
+
+fn utf8_component(component: &OsStr, source: &Path) -> Result<String, Box<RefusalEnvelope>> {
+    component.to_str().map(str::to_string).ok_or_else(|| {
+        refusal(
+            RefusalCode::Io,
+            Some(format!(
+                "Non-UTF-8 path component is not supported: {}",
+                source.display()
+            )),
+            None,
+        )
+    })
+}
+
+fn relative_member_path(path: &Path, source: &Path) -> Result<String, Box<RefusalEnvelope>> {
+    let mut components = Vec::new();
+
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => components.push("..".to_string()),
+            Component::Normal(value) => components.push(utf8_component(value, source)?),
+            Component::RootDir | Component::Prefix(_) => {
+                return Err(refusal(
+                    RefusalCode::Io,
+                    Some(format!(
+                        "Cannot resolve relative member path: {}",
+                        source.display()
+                    )),
+                    None,
+                ));
+            }
+        }
+    }
+
+    if components.is_empty() {
+        return Err(refusal(
+            RefusalCode::Io,
+            Some(format!(
+                "Cannot determine relative member path: {}",
+                source.display()
+            )),
+            None,
+        ));
+    }
+
+    Ok(components.join("/"))
 }
 
 /// Collect artifacts from input paths into a sorted list of member candidates.
@@ -52,17 +101,16 @@ pub fn collect_artifacts(inputs: &[PathBuf]) -> Result<Vec<MemberCandidate>, Box
         }
 
         if meta.is_file() {
-            let member_path = input
-                .file_name()
-                .ok_or_else(|| {
+            let member_path = utf8_component(
+                input.file_name().ok_or_else(|| {
                     refusal(
                         RefusalCode::Io,
                         Some(format!("Cannot determine filename: {}", input.display())),
                         None,
                     )
-                })?
-                .to_string_lossy()
-                .to_string();
+                })?,
+                input,
+            )?;
 
             candidates.push(MemberCandidate {
                 source: input.clone(),
@@ -103,7 +151,17 @@ fn collect_dir(
                 None,
             )
         })?
-        .to_string_lossy();
+        .to_str()
+        .ok_or_else(|| {
+            refusal(
+                RefusalCode::Io,
+                Some(format!(
+                    "Non-UTF-8 directory name is not supported: {}",
+                    root.display()
+                )),
+                None,
+            )
+        })?;
 
     // Collect and sort entries for deterministic traversal.
     let mut entries: Vec<fs::DirEntry> = fs::read_dir(dir)
@@ -158,24 +216,20 @@ fn collect_dir(
         if meta.is_dir() {
             collect_dir(root, &entry.path(), candidates)?;
         } else if meta.is_file() {
-            let relative = entry
-                .path()
-                .strip_prefix(root)
-                .map_err(|e| {
-                    refusal(
-                        RefusalCode::Io,
-                        Some(format!("Path prefix error: {e}")),
-                        None,
-                    )
-                })?
-                .to_string_lossy()
-                .to_string();
+            let entry_path = entry.path();
+            let relative = entry_path.strip_prefix(root).map_err(|e| {
+                refusal(
+                    RefusalCode::Io,
+                    Some(format!("Path prefix error: {e}")),
+                    None,
+                )
+            })?;
 
-            // Normalize to POSIX-style path: <dir_basename>/<relative>
-            let member_path = normalize_member_path(&format!("{dir_basename}/{relative}"));
+            let relative = relative_member_path(relative, &entry_path)?;
+            let member_path = format!("{dir_basename}/{relative}");
 
             candidates.push(MemberCandidate {
-                source: entry.path(),
+                source: entry_path,
                 member_path,
             });
         } else {
@@ -189,15 +243,6 @@ fn collect_dir(
 
     Ok(())
 }
-
-/// Normalize a member path to safe relative POSIX-style:
-/// - Use `/` separators
-/// - No absolute paths
-/// - No `..` segments
-fn normalize_member_path(path: &str) -> String {
-    path.replace('\\', "/")
-}
-
 /// Validate that a member path is safe (no absolute, no `..`).
 pub fn is_safe_member_path(path: &str) -> bool {
     if path.is_empty() {
@@ -266,6 +311,19 @@ mod tests {
         // Sorted bytewise
         assert_eq!(candidates[0].member_path, "reg/sub/deep.json");
         assert_eq!(candidates[1].member_path, "reg/top.json");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_literal_backslashes_in_names_are_preserved() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("evidence");
+        fs::create_dir(&dir).unwrap();
+        fs::write(dir.join(r"odd\name.json"), "{}").unwrap();
+
+        let candidates = collect_artifacts(&[dir]).unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].member_path, r"evidence/odd\name.json");
     }
 
     #[test]

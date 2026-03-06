@@ -333,6 +333,56 @@ fn seal_type_detection_matches_expectations() {
     assert_eq!(type_map["nested_registry/loans.csv"], "registry");
 }
 
+#[cfg(unix)]
+#[test]
+fn seal_preserves_literal_backslashes_in_directory_member_names() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input_dir = tmp.path().join("inputs");
+    let output_dir = tmp.path().join("sealed");
+    std::fs::create_dir(&input_dir).unwrap();
+    std::fs::write(
+        input_dir.join(r"literal\member.json"),
+        r#"{"version":"lock.v0"}"#,
+    )
+    .unwrap();
+
+    let output = pack_cmd()
+        .args([
+            "seal",
+            input_dir.to_str().unwrap(),
+            "--output",
+            output_dir.to_str().unwrap(),
+            "--no-witness",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "seal failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let manifest_content = std::fs::read_to_string(output_dir.join("manifest.json")).unwrap();
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_content).unwrap();
+    let paths: Vec<&str> = manifest["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|member| member["path"].as_str().unwrap())
+        .collect();
+
+    assert_eq!(paths, vec![r"inputs/literal\member.json"]);
+    assert!(output_dir
+        .join("inputs")
+        .join(r"literal\member.json")
+        .exists());
+    assert!(!output_dir
+        .join("inputs")
+        .join("literal/member.json")
+        .exists());
+}
+
 // ---------------------------------------------------------------------------
 // Helpers (local copies of canonical JSON / SHA256 for verification)
 // ---------------------------------------------------------------------------
