@@ -10,21 +10,38 @@ use super::record::WitnessRecord;
 /// 1. `EPISTEMIC_WITNESS` env var
 /// 2. `~/.epistemic/witness.jsonl`
 pub fn witness_ledger_path() -> PathBuf {
-    if let Ok(path) = std::env::var("EPISTEMIC_WITNESS") {
-        return PathBuf::from(path);
+    witness_ledger_path_from_env(|key| std::env::var(key).ok())
+}
+
+fn witness_ledger_path_from_env<F>(get_env: F) -> PathBuf
+where
+    F: Fn(&str) -> Option<String>,
+{
+    if let Some(path) = get_env("EPISTEMIC_WITNESS") {
+        if !path.trim().is_empty() {
+            return PathBuf::from(path);
+        }
     }
-    let home = dirs_next().unwrap_or_else(|| PathBuf::from("."));
+
+    let home = home_from_env(&get_env).unwrap_or_else(|| PathBuf::from("."));
     home.join(".epistemic").join("witness.jsonl")
 }
 
-fn dirs_next() -> Option<PathBuf> {
+fn home_from_env<F>(get_env: &F) -> Option<PathBuf>
+where
+    F: Fn(&str) -> Option<String>,
+{
     #[cfg(unix)]
     {
-        std::env::var("HOME").ok().map(PathBuf::from)
+        get_env("HOME")
+            .filter(|value| !value.trim().is_empty())
+            .map(PathBuf::from)
     }
     #[cfg(windows)]
     {
-        std::env::var("USERPROFILE").ok().map(PathBuf::from)
+        get_env("USERPROFILE")
+            .filter(|value| !value.trim().is_empty())
+            .map(PathBuf::from)
     }
     #[cfg(not(any(unix, windows)))]
     {
@@ -107,5 +124,27 @@ mod tests {
         assert_eq!(record.version, "witness.v0");
         assert_eq!(record.tool, "pack");
         assert!(!record.timestamp.is_empty());
+    }
+
+    #[test]
+    fn empty_epistemic_witness_falls_back_to_home() {
+        let path = witness_ledger_path_from_env(|key| match key {
+            "EPISTEMIC_WITNESS" => Some(String::new()),
+            "HOME" => Some("/tmp/home".to_string()),
+            _ => None,
+        });
+
+        assert_eq!(path, PathBuf::from("/tmp/home/.epistemic/witness.jsonl"));
+    }
+
+    #[test]
+    fn empty_home_falls_back_to_repo_epistemic_dir() {
+        let path = witness_ledger_path_from_env(|key| match key {
+            "EPISTEMIC_WITNESS" => None,
+            "HOME" => Some(String::new()),
+            _ => None,
+        });
+
+        assert_eq!(path, PathBuf::from(".").join(".epistemic/witness.jsonl"));
     }
 }
