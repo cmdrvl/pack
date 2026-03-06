@@ -69,12 +69,30 @@ fn seal_records_pack_created_witness() {
     assert_eq!(lines.len(), 1);
 
     let record: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
-    assert_eq!(record["version"], "witness.v0");
+    assert_eq!(record["version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(record["tool"], "pack");
     assert_eq!(record["command"], "seal");
     assert_eq!(record["outcome"], "PACK_CREATED");
+    assert_eq!(record["exit_code"], 0);
     assert!(record["pack_id"].as_str().unwrap().starts_with("sha256:"));
-    assert!(record["timestamp"].is_string());
+    assert!(record["id"].as_str().unwrap().starts_with("blake3:"));
+    assert!(record["binary_hash"]
+        .as_str()
+        .unwrap()
+        .starts_with("blake3:"));
+    assert!(record["output_hash"]
+        .as_str()
+        .unwrap()
+        .starts_with("blake3:"));
+    assert!(record["ts"].is_string());
+    assert!(record["prev"].is_null());
+    assert_eq!(record["inputs"][0]["path"], art.to_str().unwrap());
+    assert!(record["inputs"][0]["hash"]
+        .as_str()
+        .unwrap()
+        .starts_with("sha256:"));
+    assert_eq!(record["params"]["member_count"], 1);
+    assert_eq!(record["params"]["output"], out.to_str().unwrap());
 }
 
 /// Failed seal records REFUSAL witness.
@@ -93,7 +111,12 @@ fn seal_failure_records_refusal_witness() {
     let record: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
     assert_eq!(record["command"], "seal");
     assert_eq!(record["outcome"], "REFUSAL");
+    assert_eq!(record["exit_code"], 2);
     assert!(record["pack_id"].is_null());
+    assert!(record["output_hash"]
+        .as_str()
+        .unwrap()
+        .starts_with("blake3:"));
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +139,11 @@ fn verify_ok_records_witness() {
     let record: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
     assert_eq!(record["command"], "verify");
     assert_eq!(record["outcome"], "OK");
+    assert_eq!(record["exit_code"], 0);
+    assert!(record["output_hash"]
+        .as_str()
+        .unwrap()
+        .starts_with("blake3:"));
 }
 
 /// Invalid verify records INVALID witness.
@@ -134,6 +162,7 @@ fn verify_invalid_records_witness() {
     let record: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
     assert_eq!(record["command"], "verify");
     assert_eq!(record["outcome"], "INVALID");
+    assert_eq!(record["exit_code"], 1);
 }
 
 /// Diff with changes records CHANGES witness.
@@ -154,6 +183,7 @@ fn diff_changes_records_witness() {
     let record: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
     assert_eq!(record["command"], "diff");
     assert_eq!(record["outcome"], "CHANGES");
+    assert_eq!(record["exit_code"], 1);
     assert!(record["pack_id"].is_null());
 }
 
@@ -173,6 +203,7 @@ fn verify_refusal_records_witness() {
     let record: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
     assert_eq!(record["command"], "verify");
     assert_eq!(record["outcome"], "REFUSAL");
+    assert_eq!(record["exit_code"], 2);
 }
 
 /// Refusal diff records REFUSAL witness.
@@ -191,6 +222,43 @@ fn diff_refusal_records_witness() {
     let record: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
     assert_eq!(record["command"], "diff");
     assert_eq!(record["outcome"], "REFUSAL");
+    assert_eq!(record["exit_code"], 2);
+}
+
+/// Witness records chain prev ids across sequential operations.
+#[test]
+fn witness_records_chain_prev_ids() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ledger = tmp.path().join("witness.jsonl");
+    let art = tmp.path().join("data.json");
+    std::fs::write(&art, r#"{"version":"lock.v0"}"#).unwrap();
+    let out = tmp.path().join("pack_out");
+
+    let seal = pack_cmd_with_witness(ledger.to_str().unwrap())
+        .args([
+            "seal",
+            art.to_str().unwrap(),
+            "--output",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(seal.status.success());
+
+    let verify = pack_cmd_with_witness(ledger.to_str().unwrap())
+        .args(["verify", out.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(verify.status.success());
+
+    let content = std::fs::read_to_string(&ledger).unwrap();
+    let records: Vec<serde_json::Value> = content
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(records.len(), 2);
+    assert!(records[0]["id"].as_str().unwrap().starts_with("blake3:"));
+    assert_eq!(records[1]["prev"], records[0]["id"]);
 }
 
 // ---------------------------------------------------------------------------
@@ -470,6 +538,65 @@ fn witness_count_with_synthetic_ledger() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(parsed["count"], 3);
+}
+
+/// witness query supports the standard filter surface.
+#[test]
+fn witness_query_filters_with_synthetic_ledger() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ledger = tmp.path().join("witness.jsonl");
+
+    let records = [
+        r#"{"id":"blake3:1","tool":"pack","version":"0.2.0","command":"seal","inputs":[{"path":"a.json","hash":"sha256:aaa","bytes":1}],"params":{"command":"seal"},"outcome":"PACK_CREATED","exit_code":0,"output_hash":"blake3:o1","ts":"2026-01-15T10:00:00Z"}"#,
+        r#"{"id":"blake3:2","tool":"pack","version":"0.2.0","command":"seal","inputs":[{"path":"b.json","hash":"sha256:bbb","bytes":1}],"params":{"command":"seal"},"outcome":"PACK_CREATED","exit_code":0,"output_hash":"blake3:o2","ts":"2026-01-15T10:05:00Z"}"#,
+        r#"{"id":"blake3:3","tool":"pack","version":"0.2.0","command":"verify","outcome":"REFUSAL","exit_code":2,"output_hash":"blake3:o3","ts":"2026-01-15T10:10:00Z"}"#,
+    ];
+    std::fs::write(&ledger, records.join("\n") + "\n").unwrap();
+
+    let output = pack_cmd_with_witness(ledger.to_str().unwrap())
+        .args([
+            "witness",
+            "query",
+            "--since",
+            "2026-01-15T10:01:00Z",
+            "--until",
+            "2026-01-15T10:06:00Z",
+            "--outcome",
+            "PACK_CREATED",
+            "--input-hash",
+            "sha256:bbb",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0]["inputs"][0]["hash"], "sha256:bbb");
+}
+
+/// witness count can target other tools in the shared ledger.
+#[test]
+fn witness_count_honors_tool_filter() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ledger = tmp.path().join("witness.jsonl");
+
+    let records = [
+        r#"{"id":"blake3:1","tool":"pack","version":"0.2.0","command":"seal","outcome":"PACK_CREATED","exit_code":0,"output_hash":"blake3:o1","ts":"2026-01-15T10:00:00Z"}"#,
+        r#"{"id":"blake3:2","tool":"hash","version":"0.2.0","outcome":"OK","exit_code":0,"output_hash":"blake3:o2","ts":"2026-01-15T10:01:00Z"}"#,
+        r#"{"id":"blake3:3","tool":"hash","version":"0.2.0","outcome":"OK","exit_code":0,"output_hash":"blake3:o3","ts":"2026-01-15T10:02:00Z"}"#,
+    ];
+    std::fs::write(&ledger, records.join("\n") + "\n").unwrap();
+
+    let output = pack_cmd_with_witness(ledger.to_str().unwrap())
+        .args(["witness", "count", "--tool", "hash", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(parsed["count"], 2);
 }
 
 /// witness query on empty ledger returns appropriate output.

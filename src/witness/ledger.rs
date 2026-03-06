@@ -1,8 +1,8 @@
 use std::fs::{self, OpenOptions};
-use std::io::Write;
-use std::path::PathBuf;
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
 
-use super::record::WitnessRecord;
+use super::record::{canonical_json, WitnessRecord};
 
 /// Determine the witness ledger path.
 ///
@@ -61,8 +61,12 @@ pub fn append_witness(record: &WitnessRecord) -> Result<(), String> {
         fs::create_dir_all(parent).map_err(|e| format!("Cannot create witness directory: {e}"))?;
     }
 
-    let line =
-        serde_json::to_string(record).map_err(|e| format!("Cannot serialize witness: {e}"))?;
+    let mut record = record.clone();
+    if record.prev.is_none() {
+        record.prev = last_record_id(&path);
+    }
+    record.compute_id();
+    let line = canonical_json(&record);
 
     let mut file = OpenOptions::new()
         .create(true)
@@ -73,6 +77,23 @@ pub fn append_witness(record: &WitnessRecord) -> Result<(), String> {
     writeln!(file, "{line}").map_err(|e| format!("Cannot write witness record: {e}"))?;
 
     Ok(())
+}
+
+fn last_record_id(path: &Path) -> Option<String> {
+    let file = fs::File::open(path).ok()?;
+    let reader = BufReader::new(file);
+
+    let mut last_non_empty = None;
+    for line in reader.lines().map_while(Result::ok) {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            last_non_empty = Some(trimmed.to_owned());
+        }
+    }
+
+    let last = last_non_empty?;
+    let value: serde_json::Value = serde_json::from_str(&last).ok()?;
+    value.get("id")?.as_str().map(ToOwned::to_owned)
 }
 
 #[cfg(test)]
@@ -88,14 +109,28 @@ mod tests {
         // Override env for test
         std::env::set_var("EPISTEMIC_WITNESS", ledger_path.display().to_string());
 
-        let record = WitnessRecord::new("seal", "PACK_CREATED", Some("sha256:abc".to_string()));
+        let record = WitnessRecord::new(
+            "seal",
+            vec![crate::witness::WitnessInput {
+                path: "artifact.json".to_string(),
+                hash: Some("sha256:abc".to_string()),
+                bytes: Some(7),
+            }],
+            "PACK_CREATED",
+            0,
+            serde_json::Map::new(),
+            b"PACK_CREATED sha256:abc\n/tmp/out\n",
+            Some("sha256:abc".to_string()),
+        );
         append_witness(&record).unwrap();
 
         let content = fs::read_to_string(&ledger_path).unwrap();
         let parsed: WitnessRecord = serde_json::from_str(content.trim()).unwrap();
         assert_eq!(parsed.tool, "pack");
-        assert_eq!(parsed.command, "seal");
+        assert_eq!(parsed.command.as_deref(), Some("seal"));
         assert_eq!(parsed.outcome, "PACK_CREATED");
+        assert!(parsed.id.starts_with("blake3:"));
+        assert_eq!(parsed.prev, None);
 
         std::env::remove_var("EPISTEMIC_WITNESS");
     }
@@ -106,24 +141,56 @@ mod tests {
         let ledger_path = tmp.path().join("witness.jsonl");
         std::env::set_var("EPISTEMIC_WITNESS", ledger_path.display().to_string());
 
-        let r1 = WitnessRecord::new("seal", "PACK_CREATED", None);
-        let r2 = WitnessRecord::new("verify", "OK", Some("sha256:xyz".to_string()));
+        let r1 = WitnessRecord::new(
+            "seal",
+            Vec::new(),
+            "PACK_CREATED",
+            0,
+            serde_json::Map::new(),
+            b"PACK_CREATED sha256:abc\n/tmp/out\n",
+            None,
+        );
+        let r2 = WitnessRecord::new(
+            "verify",
+            Vec::new(),
+            "OK",
+            0,
+            serde_json::Map::new(),
+            b"pack verify: OK\n",
+            Some("sha256:xyz".to_string()),
+        );
         append_witness(&r1).unwrap();
         append_witness(&r2).unwrap();
 
         let content = fs::read_to_string(&ledger_path).unwrap();
-        let lines: Vec<&str> = content.trim().lines().collect();
+        let lines: Vec<&str> = content
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .collect();
         assert_eq!(lines.len(), 2);
+        let first: WitnessRecord = serde_json::from_str(lines[0]).unwrap();
+        let second: WitnessRecord = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(second.prev.as_deref(), Some(first.id.as_str()));
 
         std::env::remove_var("EPISTEMIC_WITNESS");
     }
 
     #[test]
     fn witness_record_has_correct_fields() {
-        let record = WitnessRecord::new("seal", "PACK_CREATED", Some("sha256:abc".to_string()));
-        assert_eq!(record.version, "witness.v0");
+        let record = WitnessRecord::new(
+            "seal",
+            Vec::new(),
+            "PACK_CREATED",
+            0,
+            serde_json::Map::new(),
+            b"PACK_CREATED sha256:abc\n/tmp/out\n",
+            Some("sha256:abc".to_string()),
+        );
+        assert_eq!(record.version, env!("CARGO_PKG_VERSION"));
         assert_eq!(record.tool, "pack");
-        assert!(!record.timestamp.is_empty());
+        assert!(!record.ts.is_empty());
+        assert!(record.binary_hash.starts_with("blake3:"));
+        assert!(record.output_hash.starts_with("blake3:"));
     }
 
     #[test]

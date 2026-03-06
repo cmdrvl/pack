@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -91,6 +91,9 @@ pub enum Command {
 pub enum WitnessCommand {
     /// Query witness records with optional filters.
     Query {
+        #[command(flatten)]
+        filters: WitnessFilters,
+
         /// Output as JSON.
         #[arg(long)]
         json: bool,
@@ -105,8 +108,34 @@ pub enum WitnessCommand {
 
     /// Count witness records.
     Count {
+        #[command(flatten)]
+        filters: WitnessFilters,
+
         /// Output as JSON.
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Args, Debug, Clone, Default)]
+pub struct WitnessFilters {
+    /// Restrict matches to a specific tool. Defaults to pack rows.
+    #[arg(long)]
+    pub tool: Option<String>,
+
+    /// Only include records at or after this RFC3339 timestamp.
+    #[arg(long)]
+    pub since: Option<String>,
+
+    /// Only include records at or before this RFC3339 timestamp.
+    #[arg(long)]
+    pub until: Option<String>,
+
+    /// Only include records with this outcome.
+    #[arg(long)]
+    pub outcome: Option<String>,
+
+    /// Only include records whose inputs include this hash.
+    #[arg(long = "input-hash")]
+    pub input_hash: Option<String>,
 }

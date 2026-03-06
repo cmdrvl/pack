@@ -499,25 +499,31 @@ esac
 <details>
 <summary><strong>Witness Subcommands</strong></summary>
 
-`pack` records every seal and verify to an ambient witness ledger. You can query this ledger:
+`pack` records seal, verify, and diff outcomes to an ambient witness ledger. Query and count default to `pack` rows, and accept the standard filter surface when you need to narrow or widen the shared-ledger view:
 
 ```bash
 # Query all records
 pack witness query --json
 
+# Query a filtered window
+pack witness query --since 2026-01-15T10:00:00Z --outcome PACK_CREATED --json
+
+# Query a different tool in the shared ledger
+pack witness query --tool hash --json
+
 # Get the most recent operation
 pack witness last --json
 
 # Count operations
-pack witness count --json
+pack witness count --outcome REFUSAL --json
 ```
 
 ### Subcommand Reference
 
 ```bash
-pack witness query [--json]
+pack witness query [--tool TOOL] [--since RFC3339] [--until RFC3339] [--outcome OUTCOME] [--input-hash HASH] [--json]
 pack witness last [--json]
-pack witness count [--json]
+pack witness count [--tool TOOL] [--since RFC3339] [--until RFC3339] [--outcome OUTCOME] [--input-hash HASH] [--json]
 ```
 
 ### Exit Codes (witness subcommands)

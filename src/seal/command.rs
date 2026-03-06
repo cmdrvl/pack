@@ -8,6 +8,7 @@ use crate::seal::collect::collect_artifacts;
 use crate::seal::collision::check_collisions;
 use crate::seal::copy::copy_and_hash;
 use crate::seal::finalize::finalize_manifest;
+use crate::witness::WitnessInput;
 
 /// Execute the full `pack seal` flow.
 ///
@@ -98,6 +99,15 @@ pub fn execute_seal(
         pack_id: manifest.pack_id.clone(),
         output_dir: final_dir,
         member_count: manifest.member_count,
+        witness_inputs: candidates
+            .iter()
+            .zip(copied.iter())
+            .map(|(candidate, copied_member)| WitnessInput {
+                path: candidate.source.display().to_string(),
+                hash: Some(copied_member.bytes_hash.clone()),
+                bytes: Some(copied_member.size),
+            })
+            .collect(),
     })
 }
 
@@ -107,6 +117,7 @@ pub struct SealResult {
     pub pack_id: String,
     pub output_dir: PathBuf,
     pub member_count: usize,
+    pub witness_inputs: Vec<WitnessInput>,
 }
 
 /// Recursively copy a directory tree.

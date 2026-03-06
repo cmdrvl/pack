@@ -417,9 +417,9 @@ Failure mapping:
 
 Recording policy in v0.1 target:
 
-- Record for `seal` and `verify`.
+- Record for `seal`, `verify`, and implemented `diff`.
 - Do not record for `witness` query subcommands.
-- `diff` / `push` / `pull` record when implemented.
+- `push` / `pull` record when implemented.
 
 Witness outcome mapping:
 
