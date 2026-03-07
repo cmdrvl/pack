@@ -21,6 +21,7 @@ path = "src/lib.rs"
 
 [dev-dependencies]
 tempfile = "3"
+spine-rules = { git = "https://github.com/cmdrvl/spine-rules" }
 
 [[bin]]
 name = "pack"

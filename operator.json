@@ -1,0 +1,94 @@
+{
+  "schema_version": "operator.v0",
+  "name": "pack",
+  "version": "0.2.1",
+  "description": "Seal lockfiles, reports, rules, and registry artifacts into one immutable, self-verifiable evidence pack",
+  "repository": "https://github.com/cmdrvl/pack",
+  "license": "MIT",
+  "agent_guide": "https://github.com/cmdrvl/.github/blob/main/profile/AGENT_PROMPT.md",
+
+  "invocation": {
+    "binary": "pack",
+    "usage": [
+      "pack seal <LOCKFILE> [<ARTIFACTS>...] [--output <DIR>] [--no-witness]",
+      "pack verify <PACK_DIR> [--json] [--no-witness]",
+      "pack diff <PACK_A> <PACK_B> [--json]",
+      "pack witness <query|last|count> [OPTIONS]"
+    ],
+    "output_mode": "mixed",
+    "output_schema": "pack.v0",
+    "json_flag": "--json"
+  },
+
+  "arguments": [],
+
+  "options": [
+    { "name": "no_witness", "flag": "--no-witness", "type": "flag", "description": "Suppress witness ledger recording" },
+    { "name": "describe", "flag": "--describe", "type": "flag", "description": "Print compiled operator.json and exit 0" },
+    { "name": "schema", "flag": "--schema", "type": "flag", "description": "Print pack.v0 JSON Schema and exit 0" },
+    { "name": "version", "flag": "--version", "type": "flag", "description": "Print version and exit 0" }
+  ],
+
+  "subcommands": [
+    {
+      "name": "seal",
+      "description": "Seal artifacts into an evidence pack directory",
+      "exit_codes": {
+        "0": { "meaning": "PACK_CREATED", "domain": "positive" },
+        "2": { "meaning": "REFUSAL", "domain": "error" }
+      }
+    },
+    {
+      "name": "verify",
+      "description": "Verify pack integrity (members + pack_id)",
+      "exit_codes": {
+        "0": { "meaning": "OK", "domain": "positive" },
+        "1": { "meaning": "INVALID", "domain": "negative" },
+        "2": { "meaning": "REFUSAL", "domain": "error" }
+      }
+    },
+    {
+      "name": "diff",
+      "description": "Deterministically diff two packs",
+      "status": "deferred",
+      "exit_codes": {
+        "0": { "meaning": "NO_CHANGES", "domain": "positive" },
+        "1": { "meaning": "CHANGES", "domain": "negative" },
+        "2": { "meaning": "REFUSAL", "domain": "error" }
+      }
+    },
+    {
+      "name": "witness",
+      "description": "Query witness ledger"
+    }
+  ],
+
+  "exit_codes": {
+    "0": { "meaning": "SUCCESS", "domain": "positive" },
+    "1": { "meaning": "INVALID or CHANGES", "domain": "negative" },
+    "2": { "meaning": "REFUSAL", "domain": "error" }
+  },
+
+  "refusals": [
+    { "code": "E_EMPTY", "message": "Seal called with no artifacts", "action": "escalate" },
+    { "code": "E_IO", "message": "Cannot read input, write output, or read pack directory", "action": "escalate" },
+    { "code": "E_DUPLICATE", "message": "Member path collision during seal (including reserved paths)", "action": "escalate" },
+    { "code": "E_BAD_PACK", "message": "Missing or invalid manifest.json for verify/diff/push", "action": "escalate" }
+  ],
+
+  "capabilities": {
+    "formats": ["*"],
+    "profile_aware": false,
+    "streaming": false,
+    "witness": {
+      "ambient_recording": "enabled_by_default",
+      "query_subcommands": false,
+      "no_witness_flag": "suppresses_recording"
+    }
+  },
+
+  "pipeline": {
+    "upstream": ["lock", "canon", "rvl"],
+    "downstream": []
+  }
+}

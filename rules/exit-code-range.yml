@@ -1,0 +1,16 @@
+id: exit-code-range
+language: rust
+message: |
+  R-002: Spine tools use only exit codes 0, 1, 2.
+  process::exit() with a hardcoded value outside this range violates the
+  exit code trinity. Use the ExitCode enum or return from run().
+severity: error
+note: "Golden Rule R-002 (Exit code trinity)"
+rule:
+  any:
+    - pattern: process::exit(3)
+    - pattern: process::exit(4)
+    - pattern: process::exit(5)
+    - pattern: process::exit(127)
+    - pattern: process::exit(-1)
+    - pattern: process::exit(255)

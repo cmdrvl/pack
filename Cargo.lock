@@ -443,6 +443,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "spine-rules",
  "tempfile",
 ]
 
@@ -564,6 +565,16 @@ name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
+
+[[package]]
+name = "spine-rules"
+version = "0.1.0"
+source = "git+https://github.com/cmdrvl/spine-rules#604745a162724ecbd1e754c1d599d3a7952a3aeb"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+]
 
 [[package]]
 name = "strsim"
