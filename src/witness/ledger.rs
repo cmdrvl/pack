@@ -1,6 +1,6 @@
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::io::Write;
+use std::path::PathBuf;
 
 use super::record::{canonical_json, WitnessRecord};
 
@@ -62,9 +62,6 @@ pub fn append_witness(record: &WitnessRecord) -> Result<(), String> {
     }
 
     let mut record = record.clone();
-    if record.prev.is_none() {
-        record.prev = last_record_id(&path);
-    }
     record.compute_id();
     let line = canonical_json(&record);
 
@@ -78,24 +75,6 @@ pub fn append_witness(record: &WitnessRecord) -> Result<(), String> {
 
     Ok(())
 }
-
-fn last_record_id(path: &Path) -> Option<String> {
-    let file = fs::File::open(path).ok()?;
-    let reader = BufReader::new(file);
-
-    let mut last_non_empty = None;
-    for line in reader.lines().map_while(Result::ok) {
-        let trimmed = line.trim();
-        if !trimmed.is_empty() {
-            last_non_empty = Some(trimmed.to_owned());
-        }
-    }
-
-    let last = last_non_empty?;
-    let value: serde_json::Value = serde_json::from_str(&last).ok()?;
-    value.get("id")?.as_str().map(ToOwned::to_owned)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,7 +109,6 @@ mod tests {
         assert_eq!(parsed.command.as_deref(), Some("seal"));
         assert_eq!(parsed.outcome, "PACK_CREATED");
         assert!(parsed.id.starts_with("blake3:"));
-        assert_eq!(parsed.prev, None);
 
         std::env::remove_var("EPISTEMIC_WITNESS");
     }
@@ -170,7 +148,8 @@ mod tests {
         assert_eq!(lines.len(), 2);
         let first: WitnessRecord = serde_json::from_str(lines[0]).unwrap();
         let second: WitnessRecord = serde_json::from_str(lines[1]).unwrap();
-        assert_eq!(second.prev.as_deref(), Some(first.id.as_str()));
+        assert_ne!(second.id, first.id);
+        assert_eq!(second.outcome, "OK");
 
         std::env::remove_var("EPISTEMIC_WITNESS");
     }

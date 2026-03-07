@@ -31,8 +31,6 @@ pub struct WitnessRecord {
     pub exit_code: u8,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub output_hash: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prev: Option<String>,
     #[serde(default, alias = "timestamp")]
     pub ts: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -74,7 +72,6 @@ impl WitnessRecord {
             outcome: outcome.into(),
             exit_code,
             output_hash: format!("blake3:{}", blake3::hash(output_bytes).to_hex()),
-            prev: None,
             ts: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
             pack_id,
         }

@@ -3,7 +3,7 @@ language: rust
 message: |
   R-016: Witness files are append-only.
   File::create() truncates the file. Use OpenOptions::new().append(true).open()
-  to preserve existing witness records and maintain hash-chain integrity.
+  to preserve existing witness receipts in the local ledger.
 severity: error
 note: "Golden Rule R-016 (Witness append-only)"
 rule:

@@ -85,7 +85,6 @@ fn seal_records_pack_created_witness() {
         .unwrap()
         .starts_with("blake3:"));
     assert!(record["ts"].is_string());
-    assert!(record["prev"].is_null());
     assert_eq!(record["inputs"][0]["path"], art.to_str().unwrap());
     assert!(record["inputs"][0]["hash"]
         .as_str()
@@ -225,9 +224,9 @@ fn diff_refusal_records_witness() {
     assert_eq!(record["exit_code"], 2);
 }
 
-/// Witness records chain prev ids across sequential operations.
+/// Witness records remain additive across sequential operations.
 #[test]
-fn witness_records_chain_prev_ids() {
+fn witness_records_append_sequentially() {
     let tmp = tempfile::tempdir().unwrap();
     let ledger = tmp.path().join("witness.jsonl");
     let art = tmp.path().join("data.json");
@@ -258,7 +257,9 @@ fn witness_records_chain_prev_ids() {
         .collect();
     assert_eq!(records.len(), 2);
     assert!(records[0]["id"].as_str().unwrap().starts_with("blake3:"));
-    assert_eq!(records[1]["prev"], records[0]["id"]);
+    assert_ne!(records[1]["id"], records[0]["id"]);
+    assert_eq!(records[0]["command"], "seal");
+    assert_eq!(records[1]["command"], "verify");
 }
 
 // ---------------------------------------------------------------------------
