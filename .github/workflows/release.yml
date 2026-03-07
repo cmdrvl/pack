@@ -221,7 +221,7 @@ jobs:
           tag_name: ${{ needs.validate.outputs.tag }}
           name: "pack ${{ needs.validate.outputs.version }}"
           body: |
-            ## pack ${{ needs.validate.outputs.version }}
+            This release packages `${{ needs.validate.outputs.tag }}` for all supported targets.
 
             ### Verification
 
