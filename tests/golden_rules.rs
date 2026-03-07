@@ -9,4 +9,14 @@ golden_rules_suite! {
         "src/operator.rs",
         "src/verify/command.rs",
     ],
+    fixture_success_args: &[
+        "verify",
+        "fixtures/packs/valid",
+        "--json", "--no-witness",
+    ],
+    fixture_refusal_args: &[
+        "verify",
+        "/nonexistent/pack",
+        "--json", "--no-witness",
+    ],
 }
