@@ -569,7 +569,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 [[package]]
 name = "spine-rules"
 version = "0.1.0"
-source = "git+https://github.com/cmdrvl/spine-rules#cff6c63abba56434e1c05573c87f095a6e06b2c7"
+source = "git+https://github.com/cmdrvl/spine-rules#76c87d81cddc6ee4939a553ec1efcd0a59c89a5e"
 dependencies = [
  "serde",
  "serde_json",
