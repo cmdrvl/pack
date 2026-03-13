@@ -169,13 +169,47 @@ pub fn run() -> u8 {
             println!("{output}");
             exit_code
         }
-        Command::Push { pack_dir: _ } => {
-            println!(
-                "{}",
-                network::transport::deferred_network_refusal("push").to_json()
-            );
-            ExitCode::Refusal.into()
-        }
+        Command::Push { pack_dir } => match network::push::execute_push(&pack_dir) {
+            Ok(result) => {
+                let output_text = format!("PUBLISHED {}", result.pack_id);
+                if !no_witness {
+                    let mut params = Map::new();
+                    params.insert("pack_dir".to_string(), path_value(&pack_dir));
+                    params.insert("pack_id".to_string(), Value::String(result.pack_id.clone()));
+                    let record = witness::WitnessRecord::new(
+                        "push",
+                        vec![input_from_path(&pack_dir)],
+                        "PUBLISHED",
+                        0,
+                        params,
+                        &stdout_bytes(&output_text),
+                        Some(result.pack_id.clone()),
+                    );
+                    append_witness_warning(&record);
+                }
+                println!("{output_text}");
+                ExitCode::Success.into()
+            }
+            Err(envelope) => {
+                let output_text = envelope.to_json();
+                if !no_witness {
+                    let mut params = Map::new();
+                    params.insert("pack_dir".to_string(), path_value(&pack_dir));
+                    let record = witness::WitnessRecord::new(
+                        "push",
+                        vec![input_from_path(&pack_dir)],
+                        "REFUSAL",
+                        2,
+                        params,
+                        &stdout_bytes(&output_text),
+                        None,
+                    );
+                    append_witness_warning(&record);
+                }
+                println!("{output_text}");
+                ExitCode::Refusal.into()
+            }
+        },
         Command::Pull {
             pack_id: _,
             out_dir: _,

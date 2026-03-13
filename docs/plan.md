@@ -70,7 +70,8 @@ Full chain of custody remains local-first; push/pull is optional.
 
 - `seal`: directory artifact
 - `verify` / `diff`: report output (human default, `--json` optional)
-- `push` / `pull`: status output (network wrappers; deferred in v0.1)
+- `push`: status output (network wrapper)
+- `pull`: status output (network wrapper; deferred in v0.1)
 
 ---
 
@@ -89,7 +90,7 @@ Commands:
   seal <ARTIFACT>...     Seal artifacts into an evidence pack directory
   verify <PACK_DIR>      Verify pack integrity (members + pack_id)
   diff <A> <B>           Deterministically diff two packs (deferred in v0.1)
-  push <PACK_DIR>        Publish a pack to data-fabric (deferred in v0.1)
+  push <PACK_DIR>        Publish a pack to data-fabric
   pull <PACK_ID>         Fetch a pack by ID from data-fabric (deferred in v0.1)
   witness <query|last|count>  Query witness ledger
 ```
@@ -108,7 +109,7 @@ pack diff <A> <B> [--json]
   (deferred in v0.1)
 
 pack push <PACK_DIR>
-  (deferred in v0.1; thin data-fabric wrapper)
+  (thin data-fabric wrapper; requires PACK_DATA_FABRIC_BASE_URL)
 
 pack pull <PACK_ID> --out <DIR>
   (deferred in v0.1; thin data-fabric wrapper)
@@ -140,7 +141,8 @@ pack witness count [filters] [--json]
 | `seal` | Directory artifact (`manifest.json` + copied members) | N/A |
 | `verify` | Human report | Yes |
 | `diff` | Human report (deferred v0.1) | Yes |
-| `push`, `pull` | Status lines (deferred v0.1) | N/A |
+| `push` | Status lines | N/A |
+| `pull` | Status lines (deferred v0.1) | N/A |
 | `witness` | Human report | Yes |
 
 ---
@@ -357,7 +359,7 @@ Exit semantics:
 
 ---
 
-## `push` / `pull` contract (roadmap; deferred in v0.1)
+## `push` / `pull` contract
 
 Thin wrappers to data-fabric; no new domain logic.
 
@@ -419,7 +421,8 @@ Recording policy in v0.1 target:
 
 - Record for `seal`, `verify`, and implemented `diff`.
 - Do not record for `witness` query subcommands.
-- `push` / `pull` record when implemented.
+- `push` records when implemented.
+- `pull` records when implemented.
 
 Witness outcome mapping:
 
@@ -464,7 +467,12 @@ Witness outcome mapping:
      b. Compare member sets + hashes
      c. Exit 0/1/2
 
-   push/pull (when implemented):
+   push:
+     a. Validate local pack contract
+     b. PUT manifest + member payload to data-fabric by `pack_id`
+     c. Exit 0 or 2
+
+   pull (when implemented):
      a. Transport call to data-fabric
      b. Exit 0 or 2
 
@@ -493,7 +501,7 @@ src/
 ├── diff/                # deferred in v0.1
 │   ├── diff.rs
 │   └── mod.rs
-├── network/             # deferred in v0.1
+├── network/
 │   ├── push.rs
 │   ├── pull.rs
 │   └── mod.rs

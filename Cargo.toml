@@ -6,6 +6,7 @@ description = "Seal lockfiles, reports, rules, and registry artifacts into one i
 license = "MIT"
 
 [dependencies]
+base64 = "0.22"
 blake3 = "=1.8.2"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

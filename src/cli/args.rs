@@ -64,7 +64,7 @@ pub enum Command {
         json: bool,
     },
 
-    /// Publish a pack to data-fabric (deferred in v0.1).
+    /// Publish a pack to data-fabric.
     Push {
         /// Pack directory to publish.
         pack_dir: PathBuf,

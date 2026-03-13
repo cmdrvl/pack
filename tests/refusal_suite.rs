@@ -13,8 +13,14 @@ fn assert_refusal(output: std::process::Output) -> serde_json::Value {
         output.status.code()
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("Failed to parse refusal JSON: {e}\nstdout: {stdout}"))
+    let parsed = serde_json::from_str(&stdout);
+    assert!(
+        parsed.is_ok(),
+        "Failed to parse refusal JSON: {:?}\nstdout: {}",
+        parsed.err(),
+        stdout
+    );
+    parsed.unwrap()
 }
 
 /// Validate the envelope shape: version, outcome, refusal.code, refusal.message.
@@ -206,6 +212,58 @@ fn verify_nonexistent_dir_e_bad_pack() {
     let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(report["outcome"], "REFUSAL");
     assert_eq!(report["refusal"]["code"], "E_BAD_PACK");
+}
+
+// ---------------------------------------------------------------------------
+// Push refusals
+// ---------------------------------------------------------------------------
+
+#[test]
+fn push_missing_base_url_e_io() {
+    let output = pack_cmd()
+        .args(["--no-witness", "push", "fixtures/packs/valid"])
+        .output()
+        .unwrap();
+    let envelope = assert_refusal(output);
+    assert_envelope_shape(&envelope, "E_IO");
+    assert!(envelope["refusal"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("PACK_DATA_FABRIC_BASE_URL"));
+}
+
+#[test]
+fn push_invalid_pack_e_bad_pack() {
+    let tmp = tempfile::tempdir().unwrap();
+    let artifact = tmp.path().join("data.json");
+    std::fs::write(&artifact, r#"{"version":"lock.v0","rows":5}"#).unwrap();
+    let pack_dir = tmp.path().join("pack");
+
+    let seal = pack_cmd()
+        .args([
+            "--no-witness",
+            "seal",
+            artifact.to_str().unwrap(),
+            "--output",
+            pack_dir.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(seal.status.success());
+
+    std::fs::write(pack_dir.join("data.json"), "tampered").unwrap();
+
+    let output = pack_cmd()
+        .env("PACK_DATA_FABRIC_BASE_URL", "http://127.0.0.1:9")
+        .args(["--no-witness", "push", pack_dir.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let envelope = assert_refusal(output);
+    assert_envelope_shape(&envelope, "E_BAD_PACK");
+    assert!(envelope["refusal"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("failed integrity checks"));
 }
 
 // ---------------------------------------------------------------------------

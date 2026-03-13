@@ -143,7 +143,7 @@ Upstream tools produce individual artifacts (lockfiles, reports). `pack` collect
 
 **When pack might not be ideal:**
 - You need streaming archives — pack is a directory, not a tarball
-- You need network distribution — `push`/`pull` are deferred in v0.1
+- You need remote fetch — `pull` is still deferred
 - You need signed attestation — pack verifies content integrity, not identity (use `gh attestation` for that)
 
 ---
@@ -177,6 +177,7 @@ cargo build --release
 pack seal <ARTIFACT>... [OPTIONS]
 pack verify <PACK_DIR> [OPTIONS]
 pack diff <A> <B> [OPTIONS]
+pack push <PACK_DIR>
 pack witness <query|last|count> [OPTIONS]
 ```
 
@@ -223,6 +224,27 @@ pack diff evidence/2025-11/ evidence/2025-12/ --json   # JSON report
 |------|------|---------|-------------|
 | `--json` | flag | `false` | JSON report output |
 
+### push
+
+Publish a validated pack to data-fabric with one idempotent `PUT` keyed by `pack_id`.
+
+```bash
+PACK_DATA_FABRIC_BASE_URL=http://localhost:8080 \
+  pack push evidence/2025-12/
+```
+
+Output:
+
+```text
+PUBLISHED sha256:...
+```
+
+Environment:
+
+| Variable | Description |
+|----------|-------------|
+| `PACK_DATA_FABRIC_BASE_URL` | Base URL for the data-fabric publish endpoint |
+
 ### Global Flags
 
 | Flag | Description |
@@ -234,11 +256,11 @@ pack diff evidence/2025-11/ evidence/2025-12/ --json   # JSON report
 
 ### Exit Codes
 
-| Code | seal | verify | diff |
-|------|------|--------|------|
-| `0` | `PACK_CREATED` | `OK` | `NO_CHANGES` |
-| `1` | — | `INVALID` | `CHANGES` |
-| `2` | `REFUSAL` | `REFUSAL` | `REFUSAL` |
+| Code | seal | verify | diff | push |
+|------|------|--------|------|------|
+| `0` | `PACK_CREATED` | `OK` | `NO_CHANGES` | `PUBLISHED` |
+| `1` | — | `INVALID` | `CHANGES` | — |
+| `2` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` |
 
 ---
 
@@ -399,7 +421,7 @@ pack verify evidence/2025-12/ --json | jq '.invalid[] | select(.code == "EXTRA_M
 | Limitation | Detail |
 |------------|--------|
 | **Directory-based** | Packs are directories, not archives — no tar/zip output |
-| **No network transport** | `push`/`pull` deferred in v0.1 — copy directories manually |
+| **No remote fetch** | `pull` is deferred — publish is available via `pack push` |
 | **No signing** | pack verifies content integrity, not author identity |
 | **No incremental packs** | Each pack is a complete snapshot — no delta packs |
 | **No streaming verify** | Entire pack must be on disk — no remote verification |

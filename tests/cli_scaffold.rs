@@ -1,8 +1,30 @@
 use serde_json::Value;
 use std::process::Command;
+use tiny_http::{Header, Method, Response, Server, StatusCode};
 
 fn pack_cmd() -> Command {
     Command::new(env!("CARGO_BIN_EXE_pack"))
+}
+
+fn spawn_server(status: u16, body: &'static str) -> (String, std::thread::JoinHandle<String>) {
+    let server = Server::http("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", server.server_addr());
+    let handle = std::thread::spawn(move || {
+        let mut request = server.recv().unwrap();
+        let method = request.method().clone();
+        let url = request.url().to_string();
+        let mut request_body = String::new();
+        request
+            .as_reader()
+            .read_to_string(&mut request_body)
+            .unwrap();
+        let response = Response::from_string(body)
+            .with_status_code(StatusCode(status))
+            .with_header(Header::from_bytes("Content-Type", "application/json").unwrap());
+        request.respond(response).unwrap();
+        format!("{method:?} {url}\n{request_body}")
+    });
+    (base_url, handle)
 }
 
 #[test]
@@ -62,13 +84,58 @@ fn diff_nonexistent_packs_exits_2() {
 }
 
 #[test]
-fn deferred_push_exits_2() {
+fn push_requires_base_url_env() {
     let output = pack_cmd().args(["push", "some_dir"]).output().unwrap();
     assert_eq!(output.status.code(), Some(2));
     let stdout = String::from_utf8_lossy(&output.stdout);
     let payload: Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(payload["outcome"], "REFUSAL");
     assert_eq!(payload["refusal"]["code"], "E_IO");
+    assert!(payload["refusal"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("PACK_DATA_FABRIC_BASE_URL"));
+}
+
+#[test]
+fn push_success_exits_0_with_deterministic_status_line() {
+    let tmp = tempfile::tempdir().unwrap();
+    let artifact = tmp.path().join("data.json");
+    std::fs::write(&artifact, r#"{"version":"lock.v0","rows":5}"#).unwrap();
+    let pack_dir = tmp.path().join("pack");
+
+    let seal = pack_cmd()
+        .args([
+            "--no-witness",
+            "seal",
+            artifact.to_str().unwrap(),
+            "--output",
+            pack_dir.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(seal.status.success());
+
+    let manifest: Value =
+        serde_json::from_str(&std::fs::read_to_string(pack_dir.join("manifest.json")).unwrap())
+            .unwrap();
+    let pack_id = manifest["pack_id"].as_str().unwrap().to_string();
+
+    let (base_url, handle) = spawn_server(200, r#"{"status":"stored"}"#);
+    let output = pack_cmd()
+        .env("PACK_DATA_FABRIC_BASE_URL", &base_url)
+        .args(["--no-witness", "push", pack_dir.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!("PUBLISHED {pack_id}\n")
+    );
+
+    let request = handle.join().unwrap();
+    assert!(request.starts_with(&format!("{:?} /packs/{pack_id}", Method::Put)));
 }
 
 #[test]

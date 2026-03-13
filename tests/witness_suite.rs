@@ -1,4 +1,5 @@
 use std::process::Command;
+use tiny_http::{Header, Response, Server, StatusCode};
 
 fn pack_cmd() -> Command {
     Command::new(env!("CARGO_BIN_EXE_pack"))
@@ -38,6 +39,24 @@ fn seal_temp_pack(
     );
 
     output_dir
+}
+
+fn spawn_push_server(status: u16, body: &'static str) -> (String, std::thread::JoinHandle<()>) {
+    let server = Server::http("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", server.server_addr());
+    let handle = std::thread::spawn(move || {
+        let mut request = server.recv().unwrap();
+        let mut request_body = String::new();
+        request
+            .as_reader()
+            .read_to_string(&mut request_body)
+            .unwrap();
+        let response = Response::from_string(body)
+            .with_status_code(StatusCode(status))
+            .with_header(Header::from_bytes("Content-Type", "application/json").unwrap());
+        request.respond(response).unwrap();
+    });
+    (base_url, handle)
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +239,55 @@ fn diff_refusal_records_witness() {
     let content = std::fs::read_to_string(&ledger).unwrap();
     let record: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
     assert_eq!(record["command"], "diff");
+    assert_eq!(record["outcome"], "REFUSAL");
+    assert_eq!(record["exit_code"], 2);
+}
+
+/// Successful push records PUBLISHED witness with pack_id.
+#[test]
+fn push_success_records_witness() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ledger = tmp.path().join("witness.jsonl");
+    let pack_dir = seal_temp_pack(tmp.path(), "push.json", r#"{"version":"lock.v0","rows":3}"#);
+
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(pack_dir.join("manifest.json")).unwrap())
+            .unwrap();
+    let pack_id = manifest["pack_id"].as_str().unwrap().to_string();
+
+    let (base_url, handle) = spawn_push_server(200, r#"{"status":"stored"}"#);
+    let output = pack_cmd_with_witness(ledger.to_str().unwrap())
+        .env("PACK_DATA_FABRIC_BASE_URL", &base_url)
+        .args(["push", pack_dir.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    handle.join().unwrap();
+
+    let content = std::fs::read_to_string(&ledger).unwrap();
+    let record: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
+    assert_eq!(record["command"], "push");
+    assert_eq!(record["outcome"], "PUBLISHED");
+    assert_eq!(record["exit_code"], 0);
+    assert_eq!(record["pack_id"], pack_id);
+    assert_eq!(record["params"]["pack_id"], pack_id);
+}
+
+/// Refusal push records REFUSAL witness.
+#[test]
+fn push_refusal_records_witness() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ledger = tmp.path().join("witness.jsonl");
+
+    let output = pack_cmd_with_witness(ledger.to_str().unwrap())
+        .args(["push", "fixtures/packs/valid"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+
+    let content = std::fs::read_to_string(&ledger).unwrap();
+    let record: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
+    assert_eq!(record["command"], "push");
     assert_eq!(record["outcome"], "REFUSAL");
     assert_eq!(record["exit_code"], 2);
 }

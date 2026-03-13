@@ -40,9 +40,8 @@ pub fn operator_json() -> Value {
                 }
             },
             "push": {
-                "description": "Publish a pack to data-fabric (deferred in v0.1)",
+                "description": "Publish a pack to data-fabric",
                 "output_mode": "status",
-                "status": "deferred",
                 "exit_codes": {
                     "0": "PUBLISHED",
                     "2": "REFUSAL"
