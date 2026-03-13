@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod detect;
 pub mod diff;
+pub mod network;
 pub mod operator;
 pub mod refusal;
 pub mod schema;
@@ -169,14 +170,20 @@ pub fn run() -> u8 {
             exit_code
         }
         Command::Push { pack_dir: _ } => {
-            eprintln!("pack push: deferred in v0.1");
+            println!(
+                "{}",
+                network::transport::deferred_network_refusal("push").to_json()
+            );
             ExitCode::Refusal.into()
         }
         Command::Pull {
             pack_id: _,
             out_dir: _,
         } => {
-            eprintln!("pack pull: deferred in v0.1");
+            println!(
+                "{}",
+                network::transport::deferred_network_refusal("pull").to_json()
+            );
             ExitCode::Refusal.into()
         }
         // Witness query subcommands do NOT record witness.

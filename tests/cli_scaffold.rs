@@ -1,3 +1,4 @@
+use serde_json::Value;
 use std::process::Command;
 
 fn pack_cmd() -> Command {
@@ -64,6 +65,10 @@ fn diff_nonexistent_packs_exits_2() {
 fn deferred_push_exits_2() {
     let output = pack_cmd().args(["push", "some_dir"]).output().unwrap();
     assert_eq!(output.status.code(), Some(2));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let payload: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(payload["outcome"], "REFUSAL");
+    assert_eq!(payload["refusal"]["code"], "E_IO");
 }
 
 #[test]
@@ -73,6 +78,10 @@ fn deferred_pull_exits_2() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let payload: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(payload["outcome"], "REFUSAL");
+    assert_eq!(payload["refusal"]["code"], "E_IO");
 }
 
 #[test]
