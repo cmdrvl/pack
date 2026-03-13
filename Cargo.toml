@@ -1,6 +1,6 @@
 [package]
 name = "pack"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "Seal lockfiles, reports, rules, and registry artifacts into one immutable, self-verifiable evidence pack."
 license = "MIT"
