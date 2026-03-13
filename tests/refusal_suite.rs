@@ -1,7 +1,22 @@
+use tiny_http::{Header, Response, Server, StatusCode};
+
 use std::process::Command;
 
 fn pack_cmd() -> Command {
     Command::new(env!("CARGO_BIN_EXE_pack"))
+}
+
+fn spawn_server(status: u16, body: &'static str) -> (String, std::thread::JoinHandle<()>) {
+    let server = Server::http("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", server.server_addr());
+    let handle = std::thread::spawn(move || {
+        let request = server.recv().unwrap();
+        let response = Response::from_string(body)
+            .with_status_code(StatusCode(status))
+            .with_header(Header::from_bytes("Content-Type", "application/json").unwrap());
+        request.respond(response).unwrap();
+    });
+    (base_url, handle)
 }
 
 /// Parse refusal envelope from pack stdout. Asserts exit code 2 and returns the parsed JSON.
@@ -264,6 +279,31 @@ fn push_invalid_pack_e_bad_pack() {
         .as_str()
         .unwrap()
         .contains("failed integrity checks"));
+}
+
+#[test]
+fn pull_not_found_e_io() {
+    let (base_url, handle) = spawn_server(404, r#"{"error":"missing"}"#);
+    let tmp = tempfile::tempdir().unwrap();
+    let out_dir = tmp.path().join("out");
+    let output = pack_cmd()
+        .env("PACK_DATA_FABRIC_BASE_URL", &base_url)
+        .args([
+            "--no-witness",
+            "pull",
+            "sha256:missing",
+            "--out",
+            out_dir.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let envelope = assert_refusal(output);
+    assert_envelope_shape(&envelope, "E_IO");
+    assert!(envelope["refusal"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("HTTP 404"));
+    handle.join().unwrap();
 }
 
 // ---------------------------------------------------------------------------

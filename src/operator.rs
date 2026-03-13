@@ -48,9 +48,8 @@ pub fn operator_json() -> Value {
                 }
             },
             "pull": {
-                "description": "Fetch a pack by ID from data-fabric (deferred in v0.1)",
+                "description": "Fetch a pack by ID from data-fabric",
                 "output_mode": "status",
-                "status": "deferred",
                 "exit_codes": {
                     "0": "FETCHED",
                     "2": "REFUSAL"
@@ -68,7 +67,7 @@ pub fn operator_json() -> Value {
             "E_EMPTY": "seal called with no artifacts",
             "E_IO": "Cannot read input, write output, or read pack directory",
             "E_DUPLICATE": "Member path collision during seal (including reserved paths)",
-            "E_BAD_PACK": "Missing or invalid manifest.json for verify/diff/push"
+            "E_BAD_PACK": "Missing or invalid pack payload for verify/diff/push/pull"
         },
         "global_flags": ["--describe", "--schema", "--version", "--no-witness"]
     })

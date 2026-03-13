@@ -143,7 +143,7 @@ Upstream tools produce individual artifacts (lockfiles, reports). `pack` collect
 
 **When pack might not be ideal:**
 - You need streaming archives — pack is a directory, not a tarball
-- You need remote fetch — `pull` is still deferred
+- You need zero-config transport — `push`/`pull` require `PACK_DATA_FABRIC_BASE_URL`
 - You need signed attestation — pack verifies content integrity, not identity (use `gh attestation` for that)
 
 ---
@@ -178,6 +178,7 @@ pack seal <ARTIFACT>... [OPTIONS]
 pack verify <PACK_DIR> [OPTIONS]
 pack diff <A> <B> [OPTIONS]
 pack push <PACK_DIR>
+pack pull <PACK_ID> --out <DIR>
 pack witness <query|last|count> [OPTIONS]
 ```
 
@@ -245,6 +246,28 @@ Environment:
 |----------|-------------|
 | `PACK_DATA_FABRIC_BASE_URL` | Base URL for the data-fabric publish endpoint |
 
+### pull
+
+Fetch a pack by ID from data-fabric and materialize it under `--out`.
+
+```bash
+PACK_DATA_FABRIC_BASE_URL=http://localhost:8080 \
+  pack pull sha256:abc... --out recovered/pack
+```
+
+Output:
+
+```text
+FETCHED sha256:...
+recovered/pack
+```
+
+Environment:
+
+| Variable | Description |
+|----------|-------------|
+| `PACK_DATA_FABRIC_BASE_URL` | Base URL for the data-fabric fetch endpoint |
+
 ### Global Flags
 
 | Flag | Description |
@@ -256,11 +279,11 @@ Environment:
 
 ### Exit Codes
 
-| Code | seal | verify | diff | push |
-|------|------|--------|------|------|
-| `0` | `PACK_CREATED` | `OK` | `NO_CHANGES` | `PUBLISHED` |
-| `1` | — | `INVALID` | `CHANGES` | — |
-| `2` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` |
+| Code | seal | verify | diff | push | pull |
+|------|------|--------|------|------|------|
+| `0` | `PACK_CREATED` | `OK` | `NO_CHANGES` | `PUBLISHED` | `FETCHED` |
+| `1` | — | `INVALID` | `CHANGES` | — | — |
+| `2` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` |
 
 ---
 
@@ -421,7 +444,7 @@ pack verify evidence/2025-12/ --json | jq '.invalid[] | select(.code == "EXTRA_M
 | Limitation | Detail |
 |------------|--------|
 | **Directory-based** | Packs are directories, not archives — no tar/zip output |
-| **No remote fetch** | `pull` is deferred — publish is available via `pack push` |
+| **Requires configured transport** | `push`/`pull` require `PACK_DATA_FABRIC_BASE_URL` |
 | **No signing** | pack verifies content integrity, not author identity |
 | **No incremental packs** | Each pack is a complete snapshot — no delta packs |
 | **No streaming verify** | Entire pack must be on disk — no remote verification |

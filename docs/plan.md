@@ -71,7 +71,7 @@ Full chain of custody remains local-first; push/pull is optional.
 - `seal`: directory artifact
 - `verify` / `diff`: report output (human default, `--json` optional)
 - `push`: status output (network wrapper)
-- `pull`: status output (network wrapper; deferred in v0.1)
+- `pull`: status output (network wrapper)
 
 ---
 
@@ -91,7 +91,7 @@ Commands:
   verify <PACK_DIR>      Verify pack integrity (members + pack_id)
   diff <A> <B>           Deterministically diff two packs (deferred in v0.1)
   push <PACK_DIR>        Publish a pack to data-fabric
-  pull <PACK_ID>         Fetch a pack by ID from data-fabric (deferred in v0.1)
+  pull <PACK_ID>         Fetch a pack by ID from data-fabric
   witness <query|last|count>  Query witness ledger
 ```
 
@@ -112,7 +112,7 @@ pack push <PACK_DIR>
   (thin data-fabric wrapper; requires PACK_DATA_FABRIC_BASE_URL)
 
 pack pull <PACK_ID> --out <DIR>
-  (deferred in v0.1; thin data-fabric wrapper)
+  (thin data-fabric wrapper; requires PACK_DATA_FABRIC_BASE_URL)
 
 pack witness query [filters] [--json]
 pack witness last [--json]
@@ -142,7 +142,7 @@ pack witness count [filters] [--json]
 | `verify` | Human report | Yes |
 | `diff` | Human report (deferred v0.1) | Yes |
 | `push` | Status lines | N/A |
-| `pull` | Status lines (deferred v0.1) | N/A |
+| `pull` | Status lines | N/A |
 | `witness` | Human report | Yes |
 
 ---
@@ -386,7 +386,7 @@ Failure mapping:
 | `E_EMPTY` | `seal` called with no artifacts | Provide files/directories to seal |
 | `E_IO` | Cannot read input, write output, or read pack dir | Check paths/permissions |
 | `E_DUPLICATE` | Member path collision during seal | Rename inputs or adjust source layout |
-| `E_BAD_PACK` | Missing/invalid `manifest.json` for verify/diff/push | Recreate pack via `pack seal` |
+| `E_BAD_PACK` | Missing/invalid pack payload for verify/diff/push/pull | Recreate pack via `pack seal` or re-fetch |
 
 ### Refusal envelope
 
@@ -428,6 +428,8 @@ Witness outcome mapping:
 
 - `seal`: `PACK_CREATED` or `REFUSAL`
 - `verify`: `OK`, `INVALID`, or `REFUSAL`
+- `push`: `PUBLISHED` or `REFUSAL`
+- `pull`: `FETCHED` or `REFUSAL`
 
 ---
 

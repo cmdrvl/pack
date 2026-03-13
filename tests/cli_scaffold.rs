@@ -139,7 +139,7 @@ fn push_success_exits_0_with_deterministic_status_line() {
 }
 
 #[test]
-fn deferred_pull_exits_2() {
+fn pull_requires_base_url_env() {
     let output = pack_cmd()
         .args(["pull", "sha256:abc", "--out", "dest"])
         .output()
@@ -149,6 +149,10 @@ fn deferred_pull_exits_2() {
     let payload: Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(payload["outcome"], "REFUSAL");
     assert_eq!(payload["refusal"]["code"], "E_IO");
+    assert!(payload["refusal"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("PACK_DATA_FABRIC_BASE_URL"));
 }
 
 #[test]

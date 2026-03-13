@@ -70,7 +70,7 @@ pub enum Command {
         pack_dir: PathBuf,
     },
 
-    /// Fetch a pack by ID from data-fabric (deferred in v0.1).
+    /// Fetch a pack by ID from data-fabric.
     Pull {
         /// Pack ID to fetch.
         pack_id: String,

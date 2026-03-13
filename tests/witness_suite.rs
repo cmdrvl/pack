@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::process::Command;
 use tiny_http::{Header, Response, Server, StatusCode};
 
@@ -41,7 +42,7 @@ fn seal_temp_pack(
     output_dir
 }
 
-fn spawn_push_server(status: u16, body: &'static str) -> (String, std::thread::JoinHandle<()>) {
+fn spawn_server(status: u16, body: String) -> (String, std::thread::JoinHandle<()>) {
     let server = Server::http("127.0.0.1:0").unwrap();
     let base_url = format!("http://{}", server.server_addr());
     let handle = std::thread::spawn(move || {
@@ -57,6 +58,32 @@ fn spawn_push_server(status: u16, body: &'static str) -> (String, std::thread::J
         request.respond(response).unwrap();
     });
     (base_url, handle)
+}
+
+fn stored_pack_json(pack_dir: &std::path::Path) -> String {
+    let manifest_text = std::fs::read_to_string(pack_dir.join("manifest.json")).unwrap();
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_text).unwrap();
+    let members = manifest["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|member| {
+            let path = member["path"].as_str().unwrap();
+            let bytes = std::fs::read(pack_dir.join(path)).unwrap();
+            serde_json::json!({
+                "path": path,
+                "bytes_hash": member["bytes_hash"],
+                "bytes_b64": STANDARD.encode(bytes),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    serde_json::to_string(&serde_json::json!({
+        "pack_id": manifest["pack_id"],
+        "manifest": manifest,
+        "members": members,
+    }))
+    .unwrap()
 }
 
 // ---------------------------------------------------------------------------
@@ -255,7 +282,7 @@ fn push_success_records_witness() {
             .unwrap();
     let pack_id = manifest["pack_id"].as_str().unwrap().to_string();
 
-    let (base_url, handle) = spawn_push_server(200, r#"{"status":"stored"}"#);
+    let (base_url, handle) = spawn_server(200, r#"{"status":"stored"}"#.to_string());
     let output = pack_cmd_with_witness(ledger.to_str().unwrap())
         .env("PACK_DATA_FABRIC_BASE_URL", &base_url)
         .args(["push", pack_dir.to_str().unwrap()])
@@ -290,6 +317,58 @@ fn push_refusal_records_witness() {
     assert_eq!(record["command"], "push");
     assert_eq!(record["outcome"], "REFUSAL");
     assert_eq!(record["exit_code"], 2);
+}
+
+/// Successful pull records FETCHED witness with pack_id.
+#[test]
+fn pull_success_records_witness() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ledger = tmp.path().join("witness.jsonl");
+    let pack_dir = seal_temp_pack(tmp.path(), "pull.json", r#"{"version":"lock.v0","rows":4}"#);
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(pack_dir.join("manifest.json")).unwrap())
+            .unwrap();
+    let pack_id = manifest["pack_id"].as_str().unwrap().to_string();
+    let out_dir = tmp.path().join("fetched");
+
+    let (base_url, handle) = spawn_server(200, stored_pack_json(&pack_dir));
+    let output = pack_cmd_with_witness(ledger.to_str().unwrap())
+        .env("PACK_DATA_FABRIC_BASE_URL", &base_url)
+        .args(["pull", &pack_id, "--out", out_dir.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    handle.join().unwrap();
+
+    let content = std::fs::read_to_string(&ledger).unwrap();
+    let record: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
+    assert_eq!(record["command"], "pull");
+    assert_eq!(record["outcome"], "FETCHED");
+    assert_eq!(record["exit_code"], 0);
+    assert_eq!(record["pack_id"], pack_id);
+    assert_eq!(record["params"]["out_dir"], out_dir.to_str().unwrap());
+    assert!(out_dir.join("manifest.json").exists());
+}
+
+/// Refusal pull records REFUSAL witness.
+#[test]
+fn pull_refusal_records_witness() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ledger = tmp.path().join("witness.jsonl");
+    let out_dir = tmp.path().join("out");
+
+    let output = pack_cmd_with_witness(ledger.to_str().unwrap())
+        .args(["pull", "sha256:missing", "--out", out_dir.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+
+    let content = std::fs::read_to_string(&ledger).unwrap();
+    let record: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
+    assert_eq!(record["command"], "pull");
+    assert_eq!(record["outcome"], "REFUSAL");
+    assert_eq!(record["exit_code"], 2);
+    assert_eq!(record["pack_id"], "sha256:missing");
 }
 
 /// Witness records remain additive across sequential operations.
