@@ -20,6 +20,8 @@ You've run the full pipeline: vacuum, hash, fingerprint, lock, shape, rvl. You h
 
 **pack seals artifacts into one immutable, content-addressed evidence pack with a single verifiable ID.** One command to seal. One command to verify, bit-for-bit. The `pack_id` is the SHA-256 of the canonical manifest — if any member is added, removed, or modified, the ID changes. No undeclared files allowed. No ambiguity about what's inside.
 
+If you already have the artifacts you want to preserve, start with `pack seal`. That is the standalone sealing interface for humans and skills. `lock` still matters upstream when you need to generate a lockfile, but `lock` produces one artifact; `pack seal` is what turns the full evidence set into a durable bundle.
+
 ### What makes this different
 
 - **Closed-set enforcement** — only declared members plus `manifest.json` are allowed in the pack directory. Extra files cause verification failure. Nothing sneaks in.
@@ -30,6 +32,10 @@ You've run the full pipeline: vacuum, hash, fingerprint, lock, shape, rvl. You h
 ---
 
 ## Quick Example
+
+### Standalone sealing path
+
+If the artifacts already exist on disk, `pack seal` is the direct entrypoint:
 
 ```bash
 # Seal artifacts into an evidence pack
@@ -59,7 +65,7 @@ pack diff: CHANGES
 $ pack witness last
 2026-02-25T12:00:00.000Z verify OK -
 
-# Full pipeline from scan to sealed pack
+# Full pipeline when you still need to produce the lockfile first
 $ vacuum /data/dec | hashbytes | lock --dataset-id "dec" > dec.lock.json
 $ pack seal dec.lock.json shape.report.json --output evidence/dec/
 ```
@@ -68,14 +74,14 @@ $ pack seal dec.lock.json shape.report.json --output evidence/dec/
 
 ## Where pack Fits
 
-`pack` is the **final tool** in the stream pipeline — it seals everything into an immutable evidence set.
+`pack seal` is the recommended standalone sealing interface. In the full spine pipeline, `pack` is also the **final tool** — it seals everything into an immutable evidence set after upstream tools have produced their artifacts.
 
 ```
 vacuum  →  hashbytes  →  fingerprint  →  lock  →  pack
 (scan)    (hashbytes)    (template)     (pin)    (seal)
 ```
 
-Upstream tools produce individual artifacts (lockfiles, reports). `pack` collects them into a single verifiable bundle with a content-addressed identifier.
+Upstream tools produce individual artifacts (lockfiles, reports). `pack seal` collects them into a single verifiable bundle with a content-addressed identifier.
 
 ---
 
@@ -91,6 +97,8 @@ Upstream tools produce individual artifacts (lockfiles, reports). `pack` collect
 | Pin artifacts into a self-hashed lockfile | [`lock`](https://github.com/cmdrvl/lock) |
 | Check structural comparability of CSVs | [`shape`](https://github.com/cmdrvl/shape) |
 | Explain numeric changes between CSVs | [`rvl`](https://github.com/cmdrvl/rvl) |
+
+`lock` creates one pinned artifact. `pack seal` is the standalone bundling step that preserves the whole set.
 
 `pack` only answers: **are these artifacts sealed, intact, and verifiable as a set?**
 

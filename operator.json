@@ -1,8 +1,8 @@
 {
   "schema_version": "operator.v0",
   "name": "pack",
-  "version": "0.2.1",
-  "description": "Seal lockfiles, reports, rules, and registry artifacts into one immutable, self-verifiable evidence pack",
+  "version": "0.2.3",
+  "description": "Standalone sealing entrypoint for lockfiles, reports, rules, and registry artifacts",
   "repository": "https://github.com/cmdrvl/pack",
   "license": "MIT",
   "agent_guide": "https://github.com/cmdrvl/.github/blob/main/profile/AGENT_PROMPT.md",
@@ -32,7 +32,7 @@
   "subcommands": [
     {
       "name": "seal",
-      "description": "Seal artifacts into an evidence pack directory",
+      "description": "Standalone sealing interface for artifacts already on disk",
       "exit_codes": {
         "0": { "meaning": "PACK_CREATED", "domain": "positive" },
         "2": { "meaning": "REFUSAL", "domain": "error" }

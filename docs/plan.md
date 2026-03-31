@@ -49,6 +49,8 @@ It consumes artifacts produced by the spine and emits either:
 - a sealed directory artifact (`seal`), or
 - report-style verdicts (`verify`, `diff`).
 
+For humans and skills operating outside the full pipeline, `pack seal` is the standalone sealing entrypoint once those artifacts already exist on disk. `lock` remains the upstream step that creates lockfiles; it does not replace pack's closed-set bundle semantics.
+
 Typical flow:
 
 ```bash
