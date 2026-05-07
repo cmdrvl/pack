@@ -229,6 +229,44 @@ fn inspect_does_not_record_witness() {
     assert!(!ledger.exists());
 }
 
+#[test]
+fn archive_does_not_record_witness() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ledger = tmp.path().join("witness.jsonl");
+    let pack_dir = seal_temp_pack(
+        tmp.path(),
+        "archive.json",
+        r#"{"version":"lock.v0","rows":1}"#,
+    );
+    let archive = tmp.path().join("archive.tar");
+    let imported = tmp.path().join("imported");
+
+    let export = pack_cmd_with_witness(ledger.to_str().unwrap())
+        .args([
+            "archive",
+            "export",
+            pack_dir.to_str().unwrap(),
+            "--out",
+            archive.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(export.status.success());
+
+    let import = pack_cmd_with_witness(ledger.to_str().unwrap())
+        .args([
+            "archive",
+            "import",
+            archive.to_str().unwrap(),
+            "--out",
+            imported.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(import.status.success());
+    assert!(!ledger.exists());
+}
+
 /// Diff with changes records CHANGES witness.
 #[test]
 fn diff_changes_records_witness() {

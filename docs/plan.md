@@ -74,6 +74,7 @@ Full chain of custody remains local-first; push/pull is optional.
 - `verify` / `inspect` / `diff`: report output (human default, `--json` optional)
 - `push`: status output (network wrapper)
 - `pull`: status output (network wrapper)
+- `archive`: status output (deterministic file wrapper)
 
 ---
 
@@ -85,7 +86,7 @@ pack <COMMAND> [OPTIONS]
 
 ### Commands
 
-The list below is the current interface. `seal`, `verify`, `inspect`, `diff`, `push`, `pull`, and `witness` are implemented.
+The list below is the current interface. `seal`, `verify`, `inspect`, `diff`, `push`, `pull`, `archive`, and `witness` are implemented.
 
 ```text
 Commands:
@@ -95,6 +96,7 @@ Commands:
   diff <A> <B>           Deterministically diff two packs
   push <PACK_DIR>        Publish a pack to data-fabric
   pull <PACK_ID>         Fetch a pack by ID from data-fabric
+  archive <export|import>  Export/import deterministic archive wrappers
   witness <query|last|count>  Query witness ledger
 ```
 
@@ -120,6 +122,10 @@ pack push <PACK_DIR>
 pack pull <PACK_ID> --out <DIR>
   (thin data-fabric wrapper; requires PACK_DATA_FABRIC_BASE_URL)
 
+pack archive export <PACK_DIR> --out <FILE>
+pack archive import <ARCHIVE> --out <DIR>
+  (deterministic uncompressed tar wrapper; directory pack remains canonical)
+
 pack witness query [filters] [--json]
 pack witness last [--json]
 pack witness count [filters] [--json]
@@ -140,6 +146,7 @@ pack witness count [filters] [--json]
 - `pack diff`: `0` NO_CHANGES, `1` CHANGES, `2` REFUSAL
 - `pack push`: `0` PUBLISHED, `2` REFUSAL
 - `pack pull`: `0` FETCHED, `2` REFUSAL
+- `pack archive`: `0` ARCHIVE_CREATED or ARCHIVE_IMPORTED, `2` REFUSAL
 
 ### Output modes
 
@@ -151,6 +158,7 @@ pack witness count [filters] [--json]
 | `diff` | Human report | Yes |
 | `push` | Status lines | N/A |
 | `pull` | Status lines | N/A |
+| `archive` | Status lines | N/A |
 | `witness` | Human report | Yes |
 
 ---
@@ -436,6 +444,35 @@ Environment:
 
 ---
 
+## `archive` contract
+
+Archives are deterministic transport wrappers around canonical pack directories.
+They are not a new integrity root and do not replace `pack verify`.
+
+`archive export`:
+
+- Requires a valid pack directory and refuses if pack integrity checks fail.
+- Writes an uncompressed ustar archive with `manifest.json` as the first entry.
+- Serializes `manifest.json` from canonical manifest bytes, not from source-file whitespace.
+- Writes members in manifest order, using fixed tar metadata (`mtime=0`, `uid=0`, `gid=0`, regular files only).
+- Refuses if `--out` already exists.
+- Produces byte-identical archive bytes for the same source pack.
+
+`archive import`:
+
+- Requires `manifest.json` to be the first archive entry.
+- Refuses unsafe paths, duplicate archive paths, unsupported tar entry types, and malformed archives.
+- Extracts into same-parent staging under `--out`.
+- Verifies closed-set pack semantics after extraction and before promotion.
+- Refuses if `--out` exists and is non-empty.
+- Leaves no final output directory on failed import, or leaves a pre-existing empty output directory unchanged.
+
+Witness policy:
+
+- `archive` does not append witness records; transport wrapping is intentionally outside the default operation ledger. Use `pack verify` after import when a witness-backed integrity check is required.
+
+---
+
 ## Refusal codes
 
 | Code | Trigger | Next step |
@@ -443,7 +480,7 @@ Environment:
 | `E_EMPTY` | `seal` called with no artifacts | Provide files/directories to seal |
 | `E_IO` | Cannot read input, write output, or read pack dir | Check paths/permissions |
 | `E_DUPLICATE` | Member path collision during seal | Rename inputs or adjust source layout |
-| `E_BAD_PACK` | Missing/invalid pack payload for verify/diff/push/pull | Recreate pack via `pack seal` or re-fetch |
+| `E_BAD_PACK` | Missing/invalid pack payload for verify/diff/push/pull/archive | Recreate pack via `pack seal` or re-fetch |
 
 ### Refusal envelope
 
@@ -477,12 +514,13 @@ Environment:
 Recording policy:
 
 - Record for `seal`, `verify`, `diff`, `push`, and `pull`.
-- Do not record for `inspect` or `witness` query subcommands.
+- Do not record for `inspect`, `archive`, or `witness` query subcommands.
 
 Witness outcome mapping:
 
 - `seal`: `PACK_CREATED` or `REFUSAL`
 - `verify`: `OK`, `INVALID`, or `REFUSAL`
+- `diff`: `NO_CHANGES`, `CHANGES`, or `REFUSAL`
 - `push`: `PUBLISHED` or `REFUSAL`
 - `pull`: `FETCHED` or `REFUSAL`
 
@@ -540,6 +578,18 @@ Witness outcome mapping:
      b. Materialize manifest + members under `--out`
      c. Exit 0 or 2
 
+   archive export:
+     a. Read and verify pack directory
+     b. Write deterministic uncompressed tar to `--out`
+     c. Exit 0 or 2; do not append witness
+
+   archive import:
+     a. Read archive and require manifest-first layout
+     b. Extract safe regular-file entries under same-parent staging
+     c. Verify extracted pack directory
+     d. Promote to `--out`
+     e. Exit 0 or 2; do not append witness
+
 6. Append witness record (if applicable, if not --no-witness)
 7. Exit
 ```
@@ -563,6 +613,7 @@ src/
 │   ├── verify.rs
 │   └── mod.rs
 ├── inspect.rs
+├── archive.rs
 ├── diff/
 │   ├── diff.rs
 │   └── mod.rs
@@ -601,7 +652,7 @@ Required highlights:
 - `name: "pack"`
 - `schema_version: "operator.v0"`
 - `output_mode: "mixed"`
-- subcommands: `seal`, `verify`, `inspect`, `diff`, `push`, `pull`, `witness`
+- subcommands: `seal`, `verify`, `inspect`, `diff`, `push`, `pull`, `archive`, `witness`
 - refusal map: `E_EMPTY`, `E_IO`, `E_DUPLICATE`, `E_BAD_PACK`
 - exit semantics by subcommand (0/1/2 pattern)
 
@@ -645,16 +696,19 @@ maps core requirements to concrete test evidence and is checked by
 - refusal envelope correctness for all refusal codes
 - witness append/no-witness behavior
 - inspect reports metadata without claiming integrity and does not append witness
+- archive export/import round trips to a valid pack, produces deterministic bytes for fixed source packs, refuses tampered archives, refuses unsafe archive paths, and does not append witness
 - witness query/last/count behavior on synthetic ledgers
 - `--describe` / `--schema` precedence before input validation
 - ignored large-pack performance baseline for many-small and few-large packs
 - parallel seal/verify hashing preserves ordering and can be forced single-threaded
+- archive export/import deterministic wrapper behavior
 
 Implemented post-v0.1 test tracks:
 
 - `diff` command behavior
 - `inspect` command behavior
 - `push` / `pull` transport mapping
+- `archive` export/import wrapper behavior
 - large-pack performance report shape and ignored local baseline
 
 ---
@@ -674,7 +728,7 @@ Implemented post-v0.1 test tracks:
 
 ### Can defer
 
-- archive formats (`tar.zst`), signing (`sigstore`), attestations (`in-toto`)
+- compressed archive formats (`tar.zst`), signing (`sigstore`), attestations (`in-toto`)
 - witness-driven pack projection mode (`witness export` integration)
 
 ### Current post-v0.1 additions
@@ -685,6 +739,7 @@ Implemented post-v0.1 test tracks:
 - reproducible `pack seal --created <RFC3339>` and `SOURCE_DATE_EPOCH`
 - ignored large-pack performance baseline (`tests/perf_baseline.rs`)
 - parallel seal/verify hashing controlled by `PACK_THREADS`
+- deterministic `pack archive export` / `pack archive import`
 
 ---
 

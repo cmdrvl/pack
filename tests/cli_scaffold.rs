@@ -43,6 +43,7 @@ fn help_flag_exits_0() {
     assert!(stdout.contains("seal"));
     assert!(stdout.contains("verify"));
     assert!(stdout.contains("inspect"));
+    assert!(stdout.contains("archive"));
     assert!(stdout.contains("witness"));
 }
 
@@ -194,6 +195,75 @@ fn pull_requires_base_url_env() {
         .as_str()
         .unwrap()
         .contains("PACK_DATA_FABRIC_BASE_URL"));
+}
+
+#[test]
+fn archive_export_import_cli_round_trip() {
+    let tmp = tempfile::tempdir().unwrap();
+    let artifact = tmp.path().join("data.json");
+    std::fs::write(&artifact, r#"{"version":"lock.v0","rows":5}"#).unwrap();
+    let pack_dir = tmp.path().join("pack");
+    let archive = tmp.path().join("pack.tar");
+    let imported = tmp.path().join("imported");
+
+    let seal = pack_cmd()
+        .args([
+            "--no-witness",
+            "seal",
+            artifact.to_str().unwrap(),
+            "--output",
+            pack_dir.to_str().unwrap(),
+            "--created",
+            "2026-01-15T10:30:00Z",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        seal.status.success(),
+        "seal stdout={} stderr={}",
+        String::from_utf8_lossy(&seal.stdout),
+        String::from_utf8_lossy(&seal.stderr)
+    );
+
+    let export = pack_cmd()
+        .args([
+            "archive",
+            "export",
+            pack_dir.to_str().unwrap(),
+            "--out",
+            archive.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(export.status.code(), Some(0));
+    let export_stdout = String::from_utf8_lossy(&export.stdout);
+    assert!(export_stdout.starts_with("ARCHIVE_CREATED sha256:"));
+    assert!(archive.exists());
+
+    let import = pack_cmd()
+        .args([
+            "archive",
+            "import",
+            archive.to_str().unwrap(),
+            "--out",
+            imported.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(import.status.code(), Some(0));
+    let import_stdout = String::from_utf8_lossy(&import.stdout);
+    assert!(import_stdout.starts_with("ARCHIVE_IMPORTED sha256:"));
+
+    let verify = pack_cmd()
+        .args([
+            "verify",
+            imported.to_str().unwrap(),
+            "--json",
+            "--no-witness",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(verify.status.code(), Some(0));
 }
 
 #[test]

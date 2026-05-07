@@ -136,6 +136,13 @@ Upstream tools produce individual artifacts (lockfiles, reports). `pack seal` co
 | `1` | `CHANGES` | Members added, removed, or changed between packs |
 | `2` | `REFUSAL` | One or both packs cannot be read |
 
+### archive
+
+| Exit Code | Outcome | Meaning |
+|-----------|---------|---------|
+| `0` | `ARCHIVE_CREATED` / `ARCHIVE_IMPORTED` | Deterministic tar wrapper exported or imported |
+| `2` | `REFUSAL` | Pack or archive is malformed, unsafe, or would overwrite output |
+
 ---
 
 ## How pack Compares
@@ -157,7 +164,7 @@ Upstream tools produce individual artifacts (lockfiles, reports). `pack seal` co
 - CI automation — machine-readable verify reports that gate downstream actions
 
 **When pack might not be ideal:**
-- You need streaming archives — pack is a directory, not a tarball
+- You need streaming or compressed archive verification — archive export/import is a portable wrapper, not a streaming integrity mode
 - You need zero-config transport — `push`/`pull` require `PACK_DATA_FABRIC_BASE_URL`
 - You need signed attestation — pack verifies content integrity, not identity (use `gh attestation` for that)
 
@@ -195,6 +202,8 @@ pack inspect <PACK_DIR> [OPTIONS]
 pack diff <A> <B> [OPTIONS]
 pack push <PACK_DIR>
 pack pull <PACK_ID> --out <DIR>
+pack archive export <PACK_DIR> --out <FILE>
+pack archive import <ARCHIVE> --out <DIR>
 pack witness <query|last|count> [OPTIONS]
 ```
 
@@ -311,6 +320,27 @@ Environment:
 |----------|-------------|
 | `PACK_DATA_FABRIC_BASE_URL` | Base URL for the data-fabric fetch endpoint |
 
+### archive
+
+Export or import deterministic uncompressed tar wrappers while keeping the pack
+directory as the canonical integrity root. Archives are transport wrappers, not
+new trust roots; imported archives are verified before promotion.
+
+```bash
+pack archive export evidence/2025-12/ --out evidence/2025-12.pack.tar
+pack archive import evidence/2025-12.pack.tar --out recovered/2025-12/
+```
+
+Output:
+
+```text
+ARCHIVE_CREATED sha256:...
+evidence/2025-12.pack.tar
+
+ARCHIVE_IMPORTED sha256:...
+recovered/2025-12/
+```
+
 ### Global Flags
 
 | Flag | Description |
@@ -322,11 +352,11 @@ Environment:
 
 ### Exit Codes
 
-| Code | seal | verify | diff | push | pull |
-|------|------|--------|------|------|------|
-| `0` | `PACK_CREATED` | `OK` | `NO_CHANGES` | `PUBLISHED` | `FETCHED` |
-| `1` | — | `INVALID` | `CHANGES` | — | — |
-| `2` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` |
+| Code | seal | verify | inspect | diff | push | pull | archive |
+|------|------|--------|---------|------|------|------|---------|
+| `0` | `PACK_CREATED` | `OK` | `METADATA` | `NO_CHANGES` | `PUBLISHED` | `FETCHED` | `ARCHIVE_CREATED` / `ARCHIVE_IMPORTED` |
+| `1` | — | `INVALID` | — | `CHANGES` | — | — | — |
+| `2` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` |
 
 ---
 
@@ -486,7 +516,7 @@ pack verify evidence/2025-12/ --json | jq '.invalid[] | select(.code == "EXTRA_M
 
 | Limitation | Detail |
 |------------|--------|
-| **Directory-based** | Packs are directories, not archives — no tar/zip output |
+| **Directory-based integrity** | The pack directory remains canonical; archive export/import is only a deterministic transport wrapper |
 | **Requires configured transport** | `push`/`pull` require `PACK_DATA_FABRIC_BASE_URL`; timeout and retry knobs are env-configured |
 | **No signing** | pack verifies content integrity, not author identity |
 | **No incremental packs** | Each pack is a complete snapshot — no delta packs |
@@ -504,6 +534,8 @@ pack verify evidence/2025-12/ --json | jq '.invalid[] | select(.code == "EXTRA_M
 ### Why a directory instead of an archive?
 
 Directories are inspectable without extraction. You can `cat manifest.json`, verify individual members, or browse the evidence set. Archives would add compression/extraction overhead with no integrity benefit.
+
+`pack archive` exists for one-file transport, but it deliberately preserves that model: export verifies the source directory first, writes a deterministic uncompressed tar with `manifest.json` first, and import verifies the extracted directory before promotion.
 
 ### How does `pack_id` work?
 
@@ -660,6 +692,7 @@ src/
 ├── main.rs          Entry point
 ├── lib.rs           CLI dispatch
 ├── cli/             Clap argument parsing, exit codes
+├── archive.rs       Deterministic tar export/import wrappers
 ├── seal/            Seal pipeline: collect, collision, copy, finalize, manifest
 ├── verify/          Verify pipeline: checks, schema validation, report
 ├── inspect.rs       Read-only metadata inspection

@@ -297,6 +297,35 @@ const REQUIREMENTS: &[Requirement] = &[
             },
         ],
     },
+    Requirement {
+        id: "PCK-ARCH-001",
+        evidence: &[
+            Evidence {
+                file: "src/archive.rs",
+                test: "archive_export_is_deterministic_for_same_pack",
+            },
+            Evidence {
+                file: "src/archive.rs",
+                test: "archive_import_round_trips_to_valid_pack",
+            },
+            Evidence {
+                file: "src/archive.rs",
+                test: "archive_import_tamper_refuses_and_leaves_no_output_dir",
+            },
+            Evidence {
+                file: "src/archive.rs",
+                test: "archive_import_refuses_unsafe_member_path",
+            },
+            Evidence {
+                file: "tests/cli_scaffold.rs",
+                test: "archive_export_import_cli_round_trip",
+            },
+            Evidence {
+                file: "tests/witness_suite.rs",
+                test: "archive_does_not_record_witness",
+            },
+        ],
+    },
 ];
 
 #[test]
@@ -357,6 +386,7 @@ fn source_for(file: &str) -> &'static str {
     match file {
         "src/detect/member_type.rs" => include_str!("../src/detect/member_type.rs"),
         "src/diff/command.rs" => include_str!("../src/diff/command.rs"),
+        "src/archive.rs" => include_str!("../src/archive.rs"),
         "src/inspect.rs" => include_str!("../src/inspect.rs"),
         "src/network/pull.rs" => include_str!("../src/network/pull.rs"),
         "src/network/push.rs" => include_str!("../src/network/push.rs"),

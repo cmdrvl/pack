@@ -33,7 +33,7 @@ mod tests {
     fn operator_manifest_has_all_subcommands() {
         let op = operator_json();
         for name in [
-            "seal", "verify", "inspect", "diff", "push", "pull", "witness",
+            "seal", "verify", "inspect", "diff", "push", "pull", "archive", "witness",
         ] {
             subcommand(&op, name);
         }
@@ -84,6 +84,14 @@ mod tests {
         let pull = subcommand(&op, "pull");
         assert_eq!(pull["status"], "implemented");
         assert_eq!(pull["exit_codes"]["0"]["meaning"], "FETCHED");
+
+        let archive = subcommand(&op, "archive");
+        assert_eq!(archive["status"], "implemented");
+        assert_eq!(archive["witness"], "not_recorded");
+        assert_eq!(
+            archive["exit_codes"]["0"]["meaning"],
+            "ARCHIVE_CREATED or ARCHIVE_IMPORTED"
+        );
     }
 
     #[test]

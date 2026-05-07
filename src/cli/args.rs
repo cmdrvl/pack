@@ -94,10 +94,39 @@ pub enum Command {
         out_dir: PathBuf,
     },
 
+    /// Export or import deterministic archive wrappers.
+    Archive {
+        #[command(subcommand)]
+        command: ArchiveCommand,
+    },
+
     /// Query witness ledger.
     Witness {
         #[command(subcommand)]
         command: WitnessCommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ArchiveCommand {
+    /// Export a pack directory to a deterministic tar archive.
+    Export {
+        /// Pack directory to archive.
+        pack_dir: PathBuf,
+
+        /// Output archive file.
+        #[arg(long)]
+        out: PathBuf,
+    },
+
+    /// Import a deterministic tar archive into a pack directory.
+    Import {
+        /// Archive file to import.
+        archive: PathBuf,
+
+        /// Output pack directory.
+        #[arg(long)]
+        out: PathBuf,
     },
 }
 

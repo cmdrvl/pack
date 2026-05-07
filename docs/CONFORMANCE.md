@@ -24,11 +24,10 @@ review work.
 | PCK-PERF-001 | Large-pack performance measurement covers many-small and few-large scenarios, seal/verify/diff, determinism, throughput, and best-effort memory. | `tests/perf_baseline.rs::perf_report_shape_is_stable`; `tests/perf_baseline.rs::large_pack_performance_baseline` |
 | PCK-PAR-001 | Parallel seal/verify hashing preserves deterministic result ordering and can be forced to one worker. | `src/seal/copy.rs::parallel_copy_matches_single_thread_order_and_hashes`; `src/verify/checks.rs::parallel_hash_findings_match_single_thread_order`; `src/parallel.rs::worker_count_can_force_single_thread` |
 | PCK-STAGE-001 | `seal` and `pull` stage beside the final output, refuse non-empty outputs, and never recursively copy into final output after promotion failure. | `src/staging.rs::refuses_non_empty_output_without_mutating_it`; `src/seal/command.rs::seal_promotes_into_existing_empty_output_dir`; `src/network/pull.rs::pull_promotes_into_existing_empty_output_dir`; `src/network/pull.rs::pull_failure_leaves_existing_empty_output_dir_unchanged` |
+| PCK-ARCH-001 | `archive` exports deterministic tar wrappers, imports only safe manifest-first archives, verifies before promotion, and does not append witness records. | `src/archive.rs::archive_export_is_deterministic_for_same_pack`; `src/archive.rs::archive_import_round_trips_to_valid_pack`; `src/archive.rs::archive_import_tamper_refuses_and_leaves_no_output_dir`; `src/archive.rs::archive_import_refuses_unsafe_member_path`; `tests/cli_scaffold.rs::archive_export_import_cli_round_trip`; `tests/witness_suite.rs::archive_does_not_record_witness` |
 
 ## Known Gaps
 
-- There is no dedicated conformance requirement ID yet for archive export/import
-  because archive support is not implemented.
 - There is no dedicated performance pass/fail threshold yet. The ignored
   `perf_baseline` harness freezes the measurement format before optimization
   beads set targets.

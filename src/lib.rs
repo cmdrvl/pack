@@ -1,3 +1,4 @@
+pub mod archive;
 pub mod cli;
 pub mod detect;
 pub mod diff;
@@ -13,7 +14,7 @@ pub mod verify;
 pub mod witness;
 
 use clap::Parser;
-use cli::{Cli, Command, ExitCode, WitnessCommand};
+use cli::{ArchiveCommand, Cli, Command, ExitCode, WitnessCommand};
 use serde_json::{Map, Value};
 use std::path::Path;
 
@@ -273,8 +274,47 @@ pub fn run() -> u8 {
                 ExitCode::Refusal.into()
             }
         },
+        // Archive commands are deterministic transport wrappers and do not append witness records.
+        Command::Archive { command } => dispatch_archive(command),
         // Witness query subcommands do NOT record witness.
         Command::Witness { command } => dispatch_witness(command),
+    }
+}
+
+fn dispatch_archive(command: ArchiveCommand) -> u8 {
+    match command {
+        ArchiveCommand::Export { pack_dir, out } => {
+            match archive::execute_archive_export(&pack_dir, &out) {
+                Ok(result) => {
+                    println!(
+                        "ARCHIVE_CREATED {}\n{}",
+                        result.pack_id,
+                        result.path.display()
+                    );
+                    ExitCode::Success.into()
+                }
+                Err(envelope) => {
+                    println!("{}", envelope.to_json());
+                    ExitCode::Refusal.into()
+                }
+            }
+        }
+        ArchiveCommand::Import { archive, out } => {
+            match archive::execute_archive_import(&archive, &out) {
+                Ok(result) => {
+                    println!(
+                        "ARCHIVE_IMPORTED {}\n{}",
+                        result.pack_id,
+                        result.path.display()
+                    );
+                    ExitCode::Success.into()
+                }
+                Err(envelope) => {
+                    println!("{}", envelope.to_json());
+                    ExitCode::Refusal.into()
+                }
+            }
+        }
     }
 }
 
