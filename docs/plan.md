@@ -471,6 +471,54 @@ Witness policy:
 
 - `archive` does not append witness records; transport wrapping is intentionally outside the default operation ledger. Use `pack verify` after import when a witness-backed integrity check is required.
 
+### Responsibility split: fabric vs. metadata catalog
+
+`pack` push/pull is **fabric-only by contract**. The metadata catalog is an
+**optional sidecar** for discovery and outcome-tagging — it must never be on
+the verification critical path.
+
+| Layer | Responsibility | Required for `pack verify`? |
+|---|---|---|
+| **disk pack** (`manifest.json` + members) | canonical artifact, content-addressed, self-verifying | yes — always |
+| **fabric** (data-fabric storage) | durable bytes + transport for `push` / `pull` | no — only for cross-machine handoff |
+| **catalog** (metadata catalog v2) | optional index: outcome tag, provider, schema, queryable lookup by metadata | no — purely a discovery sidecar |
+
+Discipline:
+
+- **Disk pack is source of truth.** `pack verify` runs offline against the
+  pack alone. A verifier with no network and no catalog access still
+  produces a correct verdict from `manifest.json` + member hashes.
+- **Fabric carries bytes.** `push` writes the pack to fabric under
+  `pack_id`; `pull` retrieves bytes by `pack_id`. No metadata queries,
+  no outcome lookups — just content-addressed transport.
+- **Catalog carries pointers.** When a pack matters as a discoverable data
+  product (e.g., a gold set for `benchmark`, a sealed evidence pack for
+  an outcome), a catalog entry registers `pack_id` + outcome tag + schema
+  metadata. The catalog never holds the bytes; it points at fabric.
+- **Catalog is the cache, disk is the canon.** Treat catalog entries as
+  index, not authority. If catalog and disk diverge, disk wins.
+
+Concrete example — `benchmark` gold sets:
+
+1. Gold set is sealed via `pack seal` → produces a pack with `pack_id`.
+2. `pack push` writes bytes to fabric under `pack_id`.
+3. (Optional) catalog registration emits a metadata pointer:
+   `{pack_id, outcome_tag: "bdc", kind: "gold_set", version: "v1", schema: ...}`.
+4. `benchmark` looks up gold sets via catalog query
+   ("gold sets for outcome:bdc"), gets a `pack_id`, then `pack pull`s the
+   bytes from fabric and seals them into its own evidence pack — so
+   downstream `pack verify` works offline against the run.
+
+Without step 3, the system still works — consumers must know `pack_id`
+out of band. Step 3 only adds queryability; it never changes the bytes
+path or verification semantics.
+
+This is the symmetric inverse of DataBook emission: spine tools today
+**emit** into catalog; `pack` (and any consumer of packed artifacts)
+optionally **resolves** through catalog. Both directions keep fabric as
+the bytes layer and catalog as the metadata index, with disk-sealed
+artifacts remaining canonical for offline verification.
+
 ---
 
 ## Refusal codes
