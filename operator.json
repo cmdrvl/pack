@@ -1,7 +1,7 @@
 {
   "schema_version": "operator.v0",
   "name": "pack",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Standalone sealing entrypoint for lockfiles, reports, rules, and registry artifacts",
   "repository": "https://github.com/cmdrvl/pack",
   "license": "MIT",
