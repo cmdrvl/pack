@@ -9,6 +9,10 @@ use sha2::{Digest, Sha256};
 
 use crate::refusal::{RefusalCode, RefusalEnvelope};
 use crate::seal::manifest::Manifest;
+use crate::staging::{
+    create_staging_dir, ensure_output_available, ensure_parent_exists, output_parent,
+    promote_staging,
+};
 use crate::verify::run_checks;
 
 use super::push::DATA_FABRIC_BASE_URL_ENV;
@@ -272,53 +276,10 @@ fn decode_stored_pack(
 }
 
 fn materialize_pack(decoded: &DecodedPack, out_dir: &Path) -> Result<(), Box<RefusalEnvelope>> {
-    if out_dir.exists() {
-        let mut entries = fs::read_dir(out_dir).map_err(|error| {
-            Box::new(RefusalEnvelope::new(
-                RefusalCode::Io,
-                Some(format!(
-                    "Cannot inspect output directory {}: {error}",
-                    out_dir.display()
-                )),
-                None,
-            ))
-        })?;
-        if entries.next().is_some() {
-            return Err(Box::new(RefusalEnvelope::new(
-                RefusalCode::Io,
-                Some(format!(
-                    "Output directory already exists and is non-empty: {}",
-                    out_dir.display()
-                )),
-                None,
-            )));
-        }
-    }
-
-    let staging_parent = out_dir.parent().unwrap_or_else(|| Path::new("."));
-    if !staging_parent.exists() {
-        fs::create_dir_all(staging_parent).map_err(|error| {
-            Box::new(RefusalEnvelope::new(
-                RefusalCode::Io,
-                Some(format!(
-                    "Cannot create output parent directory {}: {error}",
-                    staging_parent.display()
-                )),
-                None,
-            ))
-        })?;
-    }
-
-    let staging_dir = tempfile::Builder::new()
-        .prefix(".pack-pull-")
-        .tempdir_in(staging_parent)
-        .map_err(|error| {
-            Box::new(RefusalEnvelope::new(
-                RefusalCode::Io,
-                Some(format!("Cannot create staging directory: {error}")),
-                None,
-            ))
-        })?;
+    ensure_output_available(out_dir)?;
+    let staging_parent = output_parent(out_dir);
+    ensure_parent_exists(&staging_parent)?;
+    let staging_dir = create_staging_dir(&staging_parent, ".pack-pull-")?;
 
     write_decoded_pack(decoded, staging_dir.path())?;
 
@@ -338,18 +299,7 @@ fn materialize_pack(decoded: &DecodedPack, out_dir: &Path) -> Result<(), Box<Ref
         )));
     }
 
-    if out_dir.exists() {
-        copy_dir_recursive(staging_dir.path(), out_dir)?;
-        return Ok(());
-    }
-
-    match fs::rename(staging_dir.path(), out_dir) {
-        Ok(()) => {
-            let _ = staging_dir.keep();
-            Ok(())
-        }
-        Err(_) => copy_dir_recursive(staging_dir.path(), out_dir),
-    }
+    promote_staging(staging_dir, out_dir)
 }
 
 fn write_decoded_pack(decoded: &DecodedPack, dest_dir: &Path) -> Result<(), Box<RefusalEnvelope>> {
@@ -391,56 +341,6 @@ fn write_decoded_pack(decoded: &DecodedPack, dest_dir: &Path) -> Result<(), Box<
             None,
         ))
     })?;
-
-    Ok(())
-}
-
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), Box<RefusalEnvelope>> {
-    fs::create_dir_all(dst).map_err(|error| {
-        Box::new(RefusalEnvelope::new(
-            RefusalCode::Io,
-            Some(format!(
-                "Cannot create directory {}: {error}",
-                dst.display()
-            )),
-            None,
-        ))
-    })?;
-
-    for entry in fs::read_dir(src).map_err(|error| {
-        Box::new(RefusalEnvelope::new(
-            RefusalCode::Io,
-            Some(format!("Cannot read staging dir: {error}")),
-            None,
-        ))
-    })? {
-        let entry = entry.map_err(|error| {
-            Box::new(RefusalEnvelope::new(
-                RefusalCode::Io,
-                Some(format!("Cannot read staging entry: {error}")),
-                None,
-            ))
-        })?;
-
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-
-        if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
-        } else {
-            fs::copy(&src_path, &dst_path).map_err(|error| {
-                Box::new(RefusalEnvelope::new(
-                    RefusalCode::Io,
-                    Some(format!(
-                        "Cannot copy {} to {}: {error}",
-                        src_path.display(),
-                        dst_path.display()
-                    )),
-                    None,
-                ))
-            })?;
-        }
-    }
 
     Ok(())
 }
@@ -553,6 +453,43 @@ mod tests {
 
         let requests = server.finish();
         assert_eq!(requests, vec![(Method::Get, format!("/packs/{pack_id}"))]);
+    }
+
+    #[test]
+    fn pull_promotes_into_existing_empty_output_dir() {
+        let (_out, stored, pack_id) = create_stored_pack();
+        let server = spawn_server(200, serde_json::to_string(&stored).unwrap());
+        let temp = tempfile::tempdir().unwrap();
+        let out_dir = temp.path().join("fetched");
+        fs::create_dir(&out_dir).unwrap();
+
+        let result = execute_pull_with_base_url(&pack_id, &out_dir, &server.base_url).unwrap();
+
+        assert_eq!(result.out_dir, out_dir);
+        assert_eq!(
+            fs::read_to_string(result.out_dir.join("nested").join("report.json")).unwrap(),
+            r#"{"version":"rvl.v0","outcome":"NO_REAL_CHANGE"}"#
+        );
+        assert!(result.out_dir.join("manifest.json").exists());
+        let _ = server.finish();
+    }
+
+    #[test]
+    fn pull_failure_leaves_existing_empty_output_dir_unchanged() {
+        let (_out, stored, pack_id) = create_stored_pack();
+        let mut decoded = decode_stored_pack(&pack_id, stored).unwrap();
+        decoded.manifest.member_count += 1;
+        let temp = tempfile::tempdir().unwrap();
+        let out_dir = temp.path().join("fetched");
+        fs::create_dir(&out_dir).unwrap();
+
+        let error = materialize_pack(&decoded, &out_dir).unwrap_err();
+
+        assert_eq!(error.refusal.code, "E_BAD_PACK");
+        assert!(
+            fs::read_dir(&out_dir).unwrap().next().is_none(),
+            "pre-existing empty output dir must remain empty"
+        );
     }
 
     #[test]

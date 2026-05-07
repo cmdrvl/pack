@@ -178,7 +178,7 @@ Rules:
 - Member files are copied byte-for-byte from source inputs.
 - `member_count` equals `len(members)` and equals files listed (excluding `manifest.json`).
 - `seal` refuses if target output directory already exists and is non-empty.
-- `seal` writes via a temp staging directory and atomically renames on success (no partial pack on failure).
+- `seal` stages under the final output parent and promotes with atomic rename on success; it does not recursively copy into the final directory after promotion failure.
 
 ---
 
@@ -387,6 +387,8 @@ Thin wrappers to data-fabric; no new domain logic.
 
 - Fetch pack by `pack_id`.
 - Materialize `manifest.json` + members under `--out`.
+- Refuse if `--out` exists and is non-empty.
+- Stage under the final output parent and promote with atomic rename on success; failure leaves no final directory or leaves a pre-existing empty `--out` unchanged.
 
 Failure mapping:
 
@@ -459,12 +461,12 @@ Witness outcome mapping:
      a. Resolve/collect artifacts (files + recursive dirs)
      b. Refuse E_EMPTY if none
      c. Resolve member paths + detect collisions (E_DUPLICATE)
-     d. Prepare staging dir (refuse if final output exists and non-empty)
+     d. Prepare same-parent staging dir (refuse if final output exists and non-empty)
      e. Copy members into staging dir
      f. Build member metadata + type detection
      g. Build manifest with pack_id=""
      h. Canonicalize full manifest + compute SHA256 pack_id
-     i. Write manifest.json and atomically promote staging dir
+     i. Write manifest.json and atomically promote staging dir without recursive-copy fallback
      j. Exit 0
 
    verify:

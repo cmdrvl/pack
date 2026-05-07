@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
@@ -9,6 +8,10 @@ use crate::seal::collect::collect_artifacts;
 use crate::seal::collision::check_collisions;
 use crate::seal::copy::copy_and_hash;
 use crate::seal::finalize::finalize_manifest;
+use crate::staging::{
+    create_staging_dir, ensure_output_available, ensure_parent_exists, output_parent,
+    promote_staging,
+};
 use crate::witness::WitnessInput;
 
 /// Execute the full `pack seal` flow.
@@ -35,14 +38,16 @@ pub fn execute_seal(
     // 3. Resolve reproducible creation timestamp, then stage pack bytes.
     let created = created_timestamp(created)?;
 
-    // Create staging in system temp
-    let staging_dir = tempfile::tempdir().map_err(|e| {
-        Box::new(RefusalEnvelope::new(
-            RefusalCode::Io,
-            Some(format!("Cannot create staging directory: {e}")),
-            None,
-        ))
-    })?;
+    // Stage beside the final output so promotion can use atomic rename.
+    if let Some(dir) = output {
+        ensure_output_available(dir)?;
+    }
+    let staging_parent = match output {
+        Some(dir) => output_parent(dir),
+        None => PathBuf::from("pack"),
+    };
+    ensure_parent_exists(&staging_parent)?;
+    let staging_dir = create_staging_dir(&staging_parent, ".pack-seal-")?;
 
     // 4. Copy and hash
     let copied = copy_and_hash(&candidates, staging_dir.path())?;
@@ -56,46 +61,7 @@ pub fn execute_seal(
         None => PathBuf::from("pack").join(&manifest.pack_id),
     };
 
-    // Refuse if target exists and is non-empty
-    if final_dir.exists() {
-        let is_empty = fs::read_dir(&final_dir)
-            .map(|mut d| d.next().is_none())
-            .unwrap_or(false);
-        if !is_empty {
-            return Err(Box::new(RefusalEnvelope::new(
-                RefusalCode::Io,
-                Some(format!(
-                    "Output directory already exists and is non-empty: {}",
-                    final_dir.display()
-                )),
-                None,
-            )));
-        }
-    }
-
-    // Create parent of final_dir if needed
-    if let Some(parent) = final_dir.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent).map_err(|e| {
-                Box::new(RefusalEnvelope::new(
-                    RefusalCode::Io,
-                    Some(format!("Cannot create output parent directory: {}", e)),
-                    None,
-                ))
-            })?;
-        }
-    }
-
-    // Atomic rename from staging to final
-    // Note: rename may fail across filesystems; in that case, fall back to copy
-    if fs::rename(staging_dir.path(), &final_dir).is_err() {
-        // Fallback: copy tree
-        copy_dir_recursive(staging_dir.path(), &final_dir)?;
-    }
-
-    // Prevent tempdir cleanup from failing (dir was moved)
-    // into_path() consumes the TempDir without trying to remove it
-    let _ = staging_dir.keep();
+    promote_staging(staging_dir, &final_dir)?;
 
     Ok(SealResult {
         pack_id: manifest.pack_id.clone(),
@@ -201,54 +167,6 @@ fn parse_source_date_epoch(value: &str) -> Result<String, Box<RefusalEnvelope>> 
         })
 }
 
-/// Recursively copy a directory tree.
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), Box<RefusalEnvelope>> {
-    fs::create_dir_all(dst).map_err(|e| {
-        Box::new(RefusalEnvelope::new(
-            RefusalCode::Io,
-            Some(format!("Cannot create directory {}: {e}", dst.display())),
-            None,
-        ))
-    })?;
-
-    for entry in fs::read_dir(src).map_err(|e| {
-        Box::new(RefusalEnvelope::new(
-            RefusalCode::Io,
-            Some(format!("Cannot read staging dir: {e}")),
-            None,
-        ))
-    })? {
-        let entry = entry.map_err(|e| {
-            Box::new(RefusalEnvelope::new(
-                RefusalCode::Io,
-                Some(format!("Cannot read staging entry: {e}")),
-                None,
-            ))
-        })?;
-
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-
-        if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
-        } else {
-            fs::copy(&src_path, &dst_path).map_err(|e| {
-                Box::new(RefusalEnvelope::new(
-                    RefusalCode::Io,
-                    Some(format!(
-                        "Cannot copy {} to {}: {e}",
-                        src_path.display(),
-                        dst_path.display()
-                    )),
-                    None,
-                ))
-            })?;
-        }
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,6 +251,22 @@ mod tests {
         let err = execute_seal(&artifacts, Some(&output_dir), None, None).unwrap_err();
         assert_eq!(err.refusal.code, "E_IO");
         assert!(err.refusal.message.contains("non-empty"));
+    }
+
+    #[test]
+    fn seal_promotes_into_existing_empty_output_dir() {
+        let src = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        let artifacts = create_test_artifacts(&src);
+        let output_dir = out.path().join("empty");
+        fs::create_dir(&output_dir).unwrap();
+
+        let result = execute_seal(&artifacts, Some(&output_dir), None, None).unwrap();
+
+        assert_eq!(result.output_dir, output_dir);
+        assert!(result.output_dir.join("manifest.json").exists());
+        assert!(result.output_dir.join("nov.lock.json").exists());
+        assert!(result.output_dir.join("rvl.report.json").exists());
     }
 
     #[test]

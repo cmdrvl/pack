@@ -7,6 +7,7 @@ mod parallel;
 pub mod refusal;
 pub mod schema;
 pub mod seal;
+mod staging;
 pub mod verify;
 pub mod witness;
 

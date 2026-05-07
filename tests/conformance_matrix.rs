@@ -243,6 +243,27 @@ const REQUIREMENTS: &[Requirement] = &[
             },
         ],
     },
+    Requirement {
+        id: "PCK-STAGE-001",
+        evidence: &[
+            Evidence {
+                file: "src/staging.rs",
+                test: "refuses_non_empty_output_without_mutating_it",
+            },
+            Evidence {
+                file: "src/seal/command.rs",
+                test: "seal_promotes_into_existing_empty_output_dir",
+            },
+            Evidence {
+                file: "src/network/pull.rs",
+                test: "pull_promotes_into_existing_empty_output_dir",
+            },
+            Evidence {
+                file: "src/network/pull.rs",
+                test: "pull_failure_leaves_existing_empty_output_dir_unchanged",
+            },
+        ],
+    },
 ];
 
 #[test]
@@ -303,6 +324,7 @@ fn source_for(file: &str) -> &'static str {
     match file {
         "src/detect/member_type.rs" => include_str!("../src/detect/member_type.rs"),
         "src/diff/command.rs" => include_str!("../src/diff/command.rs"),
+        "src/network/pull.rs" => include_str!("../src/network/pull.rs"),
         "src/network/push.rs" => include_str!("../src/network/push.rs"),
         "src/operator.rs" => include_str!("../src/operator.rs"),
         "src/parallel.rs" => include_str!("../src/parallel.rs"),
@@ -311,6 +333,7 @@ fn source_for(file: &str) -> &'static str {
         "src/seal/command.rs" => include_str!("../src/seal/command.rs"),
         "src/seal/copy.rs" => include_str!("../src/seal/copy.rs"),
         "src/seal/manifest.rs" => include_str!("../src/seal/manifest.rs"),
+        "src/staging.rs" => include_str!("../src/staging.rs"),
         "src/verify/checks.rs" => include_str!("../src/verify/checks.rs"),
         "tests/cli_scaffold.rs" => include_str!("cli_scaffold.rs"),
         "tests/perf_baseline.rs" => include_str!("perf_baseline.rs"),

@@ -22,6 +22,7 @@ review work.
 | PCK-OP-001 | `--describe` is byte-source-equivalent to the checked-in operator contract after JSON parsing. | `tests/cli_scaffold.rs::describe_matches_checked_in_operator_json`; `src/operator.rs::compiled_operator_matches_checked_in_operator_json` |
 | PCK-PERF-001 | Large-pack performance measurement covers many-small and few-large scenarios, seal/verify/diff, determinism, throughput, and best-effort memory. | `tests/perf_baseline.rs::perf_report_shape_is_stable`; `tests/perf_baseline.rs::large_pack_performance_baseline` |
 | PCK-PAR-001 | Parallel seal/verify hashing preserves deterministic result ordering and can be forced to one worker. | `src/seal/copy.rs::parallel_copy_matches_single_thread_order_and_hashes`; `src/verify/checks.rs::parallel_hash_findings_match_single_thread_order`; `src/parallel.rs::worker_count_can_force_single_thread` |
+| PCK-STAGE-001 | `seal` and `pull` stage beside the final output, refuse non-empty outputs, and never recursively copy into final output after promotion failure. | `src/staging.rs::refuses_non_empty_output_without_mutating_it`; `src/seal/command.rs::seal_promotes_into_existing_empty_output_dir`; `src/network/pull.rs::pull_promotes_into_existing_empty_output_dir`; `src/network/pull.rs::pull_failure_leaves_existing_empty_output_dir_unchanged` |
 
 ## Known Gaps
 

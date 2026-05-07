@@ -264,6 +264,8 @@ Environment:
 ### pull
 
 Fetch a pack by ID from data-fabric and materialize it under `--out`.
+The output path must be nonexistent or an empty directory; materialization uses
+same-parent staging and atomic promotion.
 
 ```bash
 PACK_DATA_FABRIC_BASE_URL=http://localhost:8080 \
