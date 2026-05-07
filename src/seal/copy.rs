@@ -1,10 +1,14 @@
+use std::collections::VecDeque;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 use sha2::{Digest, Sha256};
 
 use super::collect::MemberCandidate;
+use crate::parallel::worker_count;
 use crate::refusal::{RefusalCode, RefusalEnvelope};
 
 /// Result of copying a single member into the pack output directory.
@@ -18,6 +22,9 @@ pub struct CopiedMember {
     pub size: u64,
 }
 
+type CopyResult = Result<CopiedMember, Box<RefusalEnvelope>>;
+type SharedCopyResults = Arc<Mutex<Vec<Option<CopyResult>>>>;
+
 /// Copy members into the staging directory and compute their SHA256 hashes.
 ///
 /// For each candidate:
@@ -28,28 +35,96 @@ pub fn copy_and_hash(
     candidates: &[MemberCandidate],
     staging_dir: &Path,
 ) -> Result<Vec<CopiedMember>, Box<RefusalEnvelope>> {
+    copy_and_hash_with_workers(candidates, staging_dir, worker_count(candidates.len()))
+}
+
+fn copy_and_hash_with_workers(
+    candidates: &[MemberCandidate],
+    staging_dir: &Path,
+    workers: usize,
+) -> Result<Vec<CopiedMember>, Box<RefusalEnvelope>> {
+    if workers <= 1 || candidates.len() <= 1 {
+        return copy_and_hash_sequential(candidates, staging_dir);
+    }
+
+    let jobs = Arc::new(Mutex::new((0..candidates.len()).collect::<VecDeque<_>>()));
+    let results = Arc::new(Mutex::new(
+        (0..candidates.len()).map(|_| None).collect::<Vec<_>>(),
+    ));
+
+    thread::scope(|scope| {
+        for _ in 0..workers {
+            let jobs = Arc::clone(&jobs);
+            let results = Arc::clone(&results);
+            scope.spawn(move || loop {
+                let index = {
+                    let mut jobs = jobs.lock().expect("copy job queue poisoned");
+                    jobs.pop_front()
+                };
+                let Some(index) = index else {
+                    break;
+                };
+                let result = copy_one_candidate(&candidates[index], staging_dir);
+                let mut results = results.lock().expect("copy results poisoned");
+                results[index] = Some(result);
+            });
+        }
+    });
+
+    collect_ordered_copy_results(results)
+}
+
+fn copy_and_hash_sequential(
+    candidates: &[MemberCandidate],
+    staging_dir: &Path,
+) -> Result<Vec<CopiedMember>, Box<RefusalEnvelope>> {
     let mut results = Vec::with_capacity(candidates.len());
 
     for candidate in candidates {
-        let dest = staging_dir.join(&candidate.member_path);
-
-        // Create parent directories if needed.
-        if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent).map_err(|e| io_refusal(&candidate.member_path, e))?;
-        }
-
-        // Copy and hash in one pass.
-        let (bytes_hash, size) =
-            copy_and_hash_file(&candidate.source, &dest, &candidate.member_path)?;
-
-        results.push(CopiedMember {
-            member_path: candidate.member_path.clone(),
-            bytes_hash,
-            size,
-        });
+        results.push(copy_one_candidate(candidate, staging_dir)?);
     }
 
     Ok(results)
+}
+
+fn copy_one_candidate(
+    candidate: &MemberCandidate,
+    staging_dir: &Path,
+) -> Result<CopiedMember, Box<RefusalEnvelope>> {
+    let dest = staging_dir.join(&candidate.member_path);
+
+    // Create parent directories if needed.
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).map_err(|e| io_refusal(&candidate.member_path, e))?;
+    }
+
+    // Copy and hash in one pass.
+    let (bytes_hash, size) = copy_and_hash_file(&candidate.source, &dest, &candidate.member_path)?;
+
+    Ok(CopiedMember {
+        member_path: candidate.member_path.clone(),
+        bytes_hash,
+        size,
+    })
+}
+
+fn collect_ordered_copy_results(
+    results: SharedCopyResults,
+) -> Result<Vec<CopiedMember>, Box<RefusalEnvelope>> {
+    let mut results = Arc::try_unwrap(results)
+        .expect("copy results still referenced")
+        .into_inner()
+        .expect("copy results poisoned");
+    let mut copied = Vec::with_capacity(results.len());
+
+    for result in results.drain(..) {
+        match result.expect("copy worker did not fill result") {
+            Ok(member) => copied.push(member),
+            Err(envelope) => return Err(envelope),
+        }
+    }
+
+    Ok(copied)
 }
 
 /// Copy a single file while computing its SHA256 hash.
@@ -109,6 +184,9 @@ mod tests {
 
     fn make_candidate(tmp: &TempDir, name: &str, content: &[u8]) -> MemberCandidate {
         let path = tmp.path().join(name);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
         fs::write(&path, content).unwrap();
         MemberCandidate {
             source: path,
@@ -197,5 +275,36 @@ mod tests {
         let results = copy_and_hash(&[candidate], staging.path()).unwrap();
         assert_eq!(results[0].size, 0);
         assert!(results[0].bytes_hash.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn parallel_copy_matches_single_thread_order_and_hashes() {
+        let src_tmp = TempDir::new().unwrap();
+        let single_staging = TempDir::new().unwrap();
+        let parallel_staging = TempDir::new().unwrap();
+        let mut candidates = Vec::new();
+
+        for index in 0..32 {
+            candidates.push(make_candidate(
+                &src_tmp,
+                &format!("nested/member_{index:03}.bin"),
+                format!("deterministic member content {index}").as_bytes(),
+            ));
+        }
+
+        let single = copy_and_hash_with_workers(&candidates, single_staging.path(), 1).unwrap();
+        let parallel = copy_and_hash_with_workers(&candidates, parallel_staging.path(), 8).unwrap();
+
+        assert_eq!(single, parallel);
+        let paths: Vec<&str> = parallel
+            .iter()
+            .map(|member| member.member_path.as_str())
+            .collect();
+        assert_eq!(paths.first(), Some(&"nested/member_000.bin"));
+        assert_eq!(paths.last(), Some(&"nested/member_031.bin"));
+        assert!(parallel_staging
+            .path()
+            .join("nested/member_031.bin")
+            .exists());
     }
 }

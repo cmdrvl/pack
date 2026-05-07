@@ -226,6 +226,23 @@ const REQUIREMENTS: &[Requirement] = &[
             },
         ],
     },
+    Requirement {
+        id: "PCK-PAR-001",
+        evidence: &[
+            Evidence {
+                file: "src/seal/copy.rs",
+                test: "parallel_copy_matches_single_thread_order_and_hashes",
+            },
+            Evidence {
+                file: "src/verify/checks.rs",
+                test: "parallel_hash_findings_match_single_thread_order",
+            },
+            Evidence {
+                file: "src/parallel.rs",
+                test: "worker_count_can_force_single_thread",
+            },
+        ],
+    },
 ];
 
 #[test]
@@ -288,10 +305,13 @@ fn source_for(file: &str) -> &'static str {
         "src/diff/command.rs" => include_str!("../src/diff/command.rs"),
         "src/network/push.rs" => include_str!("../src/network/push.rs"),
         "src/operator.rs" => include_str!("../src/operator.rs"),
+        "src/parallel.rs" => include_str!("../src/parallel.rs"),
         "src/refusal/envelope.rs" => include_str!("../src/refusal/envelope.rs"),
         "src/seal/collect.rs" => include_str!("../src/seal/collect.rs"),
         "src/seal/command.rs" => include_str!("../src/seal/command.rs"),
+        "src/seal/copy.rs" => include_str!("../src/seal/copy.rs"),
         "src/seal/manifest.rs" => include_str!("../src/seal/manifest.rs"),
+        "src/verify/checks.rs" => include_str!("../src/verify/checks.rs"),
         "tests/cli_scaffold.rs" => include_str!("cli_scaffold.rs"),
         "tests/perf_baseline.rs" => include_str!("perf_baseline.rs"),
         "tests/refusal_suite.rs" => include_str!("refusal_suite.rs"),

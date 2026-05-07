@@ -3,6 +3,7 @@ pub mod detect;
 pub mod diff;
 pub mod network;
 pub mod operator;
+mod parallel;
 pub mod refusal;
 pub mod schema;
 pub mod seal;

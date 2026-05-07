@@ -32,6 +32,7 @@ struct BaselineReport {
 struct MeasurementReport {
     time_source: &'static str,
     memory_source: String,
+    pack_threads: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -81,6 +82,7 @@ fn perf_report_shape_is_stable() {
         measurement: MeasurementReport {
             time_source: "std::time::Instant",
             memory_source: "/usr/bin/time unavailable".to_string(),
+            pack_threads: None,
         },
         scenarios: vec![ScenarioReport {
             name: "many_small_files".to_string(),
@@ -150,6 +152,7 @@ fn large_pack_performance_baseline() {
         measurement: MeasurementReport {
             time_source: "std::time::Instant",
             memory_source,
+            pack_threads: std::env::var("PACK_THREADS").ok(),
         },
         scenarios: scenario_reports,
     };

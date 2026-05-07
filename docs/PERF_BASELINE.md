@@ -34,6 +34,15 @@ cargo test --test perf_baseline -- --ignored --nocapture --test-threads=1
 Set `PACK_PERF_RSS=0` to disable the `/usr/bin/time` wrapper if it is not
 available or if you only want elapsed timings.
 
+`pack` uses available CPU cores for seal/verify member hashing by default. Set
+`PACK_THREADS=1` to force single-threaded behavior, or set `PACK_THREADS=<N>` to
+cap worker concurrency:
+
+```bash
+PACK_THREADS=1 PACK_PERF_BIN=target/release/pack \
+cargo test --test perf_baseline -- --ignored --nocapture --test-threads=1
+```
+
 ## What It Measures
 
 The report schema is `pack.perf-baseline.v0`. It covers two scenarios:
@@ -52,7 +61,8 @@ Each scenario measures:
 
 Each operation reports exit code, elapsed milliseconds, throughput in MiB/s
 where byte volume is meaningful, and `max_rss_kib` when `/usr/bin/time` is
-available. macOS uses `/usr/bin/time -l`; Linux uses `/usr/bin/time -v`.
+available. The report also records `PACK_THREADS` when set. macOS uses
+`/usr/bin/time -l`; Linux uses `/usr/bin/time -v`.
 
 The harness also asserts determinism:
 
@@ -76,8 +86,8 @@ cargo test --test perf_baseline -- --ignored --nocapture --test-threads=1 \
   | tee /tmp/pack-perf-baseline.json
 ```
 
-Initial checked-in calibration on an Apple Silicon macOS workstation using
-`target/release/pack` and the default profile:
+Pre-parallel calibration from `bd-12s` on an Apple Silicon macOS workstation
+using `target/release/pack` and the default profile:
 
 | Scenario | Operation | Files | Bytes | Duration ms | Throughput MiB/s | Max RSS KiB |
 |---|---:|---:|---:|---:|---:|---:|
@@ -93,3 +103,22 @@ Initial checked-in calibration on an Apple Silicon macOS workstation using
 | few_large_files | seal_changed | 8 | 16,777,216 | 159 | 100.179 | 5,020 |
 | few_large_files | diff_identical | 8 | 16,777,216 | 13 | n/a | 2,688 |
 | few_large_files | diff_changed | 8 | 16,777,216 | 12 | n/a | 2,920 |
+
+Post-parallel calibration from `bd-2j3` on the same machine, default workers
+versus forced single-thread mode:
+
+| Scenario | Operation | Default ms | Default MiB/s | `PACK_THREADS=1` ms | `PACK_THREADS=1` MiB/s |
+|---|---:|---:|---:|---:|---:|
+| many_small_files | seal_original | 600 | 1.626 | 281 | 3.473 |
+| many_small_files | seal_repeat | 156 | 6.225 | 301 | 3.240 |
+| many_small_files | verify_original | 45 | 21.512 | 100 | 9.754 |
+| many_small_files | seal_changed | 131 | 7.401 | 288 | 3.386 |
+| few_large_files | seal_original | 44 | 362.534 | 152 | 104.678 |
+| few_large_files | seal_repeat | 49 | 326.154 | 142 | 112.389 |
+| few_large_files | verify_original | 31 | 506.701 | 102 | 156.312 |
+| few_large_files | seal_changed | 49 | 321.276 | 155 | 102.758 |
+
+The first many-small `seal_original` row is cold-cache and slower in this local
+run; the repeated seal, changed seal, verify path, and few-large scenario show
+the intended improvement. Use the full JSON report rather than a single row
+when comparing branches.

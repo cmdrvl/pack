@@ -622,6 +622,9 @@ PACK_PERF_BIN=target/release/pack \
 cargo test --test perf_baseline -- --ignored --nocapture --test-threads=1
 ```
 
+Set `PACK_THREADS=1` to force single-threaded seal/verify hashing for debugging
+or branch-to-branch performance comparisons.
+
 ### Project Structure
 
 ```text

@@ -598,6 +598,7 @@ maps core requirements to concrete test evidence and is checked by
 - witness query/last/count behavior on synthetic ledgers
 - `--describe` / `--schema` precedence before input validation
 - ignored large-pack performance baseline for many-small and few-large packs
+- parallel seal/verify hashing preserves ordering and can be forced single-threaded
 
 Implemented post-v0.1 test tracks:
 
@@ -632,6 +633,7 @@ Implemented post-v0.1 test tracks:
 - witness append for `diff`, `push`, and `pull`
 - reproducible `pack seal --created <RFC3339>` and `SOURCE_DATE_EPOCH`
 - ignored large-pack performance baseline (`tests/perf_baseline.rs`)
+- parallel seal/verify hashing controlled by `PACK_THREADS`
 
 ---
 
