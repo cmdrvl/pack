@@ -611,6 +611,17 @@ cargo clippy --all-targets -- -D warnings
 cargo test -- --test-threads=1
 ```
 
+### Performance Baseline
+
+Large-pack profiling lives in [docs/PERF_BASELINE.md](docs/PERF_BASELINE.md).
+The harness is ignored by default; run it locally with a release binary:
+
+```bash
+cargo build --release
+PACK_PERF_BIN=target/release/pack \
+cargo test --test perf_baseline -- --ignored --nocapture --test-threads=1
+```
+
 ### Project Structure
 
 ```text

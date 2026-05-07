@@ -597,11 +597,13 @@ maps core requirements to concrete test evidence and is checked by
 - witness append/no-witness behavior
 - witness query/last/count behavior on synthetic ledgers
 - `--describe` / `--schema` precedence before input validation
+- ignored large-pack performance baseline for many-small and few-large packs
 
 Implemented post-v0.1 test tracks:
 
 - `diff` command behavior
 - `push` / `pull` transport mapping
+- large-pack performance report shape and ignored local baseline
 
 ---
 
@@ -629,6 +631,7 @@ Implemented post-v0.1 test tracks:
 - `pack push` / `pack pull`
 - witness append for `diff`, `push`, and `pull`
 - reproducible `pack seal --created <RFC3339>` and `SOURCE_DATE_EPOCH`
+- ignored large-pack performance baseline (`tests/perf_baseline.rs`)
 
 ---
 

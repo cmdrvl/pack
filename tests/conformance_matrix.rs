@@ -213,6 +213,19 @@ const REQUIREMENTS: &[Requirement] = &[
             },
         ],
     },
+    Requirement {
+        id: "PCK-PERF-001",
+        evidence: &[
+            Evidence {
+                file: "tests/perf_baseline.rs",
+                test: "perf_report_shape_is_stable",
+            },
+            Evidence {
+                file: "tests/perf_baseline.rs",
+                test: "large_pack_performance_baseline",
+            },
+        ],
+    },
 ];
 
 #[test]
@@ -280,6 +293,7 @@ fn source_for(file: &str) -> &'static str {
         "src/seal/command.rs" => include_str!("../src/seal/command.rs"),
         "src/seal/manifest.rs" => include_str!("../src/seal/manifest.rs"),
         "tests/cli_scaffold.rs" => include_str!("cli_scaffold.rs"),
+        "tests/perf_baseline.rs" => include_str!("perf_baseline.rs"),
         "tests/refusal_suite.rs" => include_str!("refusal_suite.rs"),
         "tests/schema_validation.rs" => include_str!("schema_validation.rs"),
         "tests/seal_suite.rs" => include_str!("seal_suite.rs"),

@@ -20,10 +20,12 @@ review work.
 | PCK-NET-001 | `push` and `pull` map missing configuration, invalid packs, and transport failures to refusal semantics. | `tests/refusal_suite.rs::push_missing_base_url_e_io`; `tests/refusal_suite.rs::pull_not_found_e_io`; `src/network/push.rs::invalid_pack_refuses_before_network_publish` |
 | PCK-DESC-001 | `--describe` and `--schema` short-circuit before normal command validation. | `tests/cli_scaffold.rs::describe_short_circuits_before_validation`; `tests/cli_scaffold.rs::schema_short_circuits_before_validation` |
 | PCK-OP-001 | `--describe` is byte-source-equivalent to the checked-in operator contract after JSON parsing. | `tests/cli_scaffold.rs::describe_matches_checked_in_operator_json`; `src/operator.rs::compiled_operator_matches_checked_in_operator_json` |
+| PCK-PERF-001 | Large-pack performance measurement covers many-small and few-large scenarios, seal/verify/diff, determinism, throughput, and best-effort memory. | `tests/perf_baseline.rs::perf_report_shape_is_stable`; `tests/perf_baseline.rs::large_pack_performance_baseline` |
 
 ## Known Gaps
 
 - There is no dedicated conformance requirement ID yet for archive export/import
   because archive support is not implemented.
-- There is no dedicated performance conformance threshold yet. `bd-12s` tracks
-  the baseline needed before setting one.
+- There is no dedicated performance pass/fail threshold yet. The ignored
+  `perf_baseline` harness freezes the measurement format before optimization
+  beads set targets.
