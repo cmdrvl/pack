@@ -546,6 +546,10 @@ Required highlights:
 
 ## Testing requirements
 
+The plan conformance matrix in [`docs/CONFORMANCE.md`](./CONFORMANCE.md)
+maps core requirements to concrete test evidence and is checked by
+`tests/conformance_matrix.rs`.
+
 ### Fixtures
 
 - `fixtures/artifacts/`:
