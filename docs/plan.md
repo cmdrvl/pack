@@ -574,6 +574,90 @@ Witness outcome mapping:
 
 ---
 
+## Witness-to-pack projection plan
+
+Witness-to-pack projection is planned as a provenance-driven artifact selection
+layer for `pack seal`. It must not become a second integrity model.
+
+Primary unit of work:
+
+- The common case is an NTM session, especially an agent swarm/tournament.
+- One NTM session normally maps to one projected evidence pack.
+- A session pack should preserve the artifacts used by the tournament and the
+  witness slice that explains why those artifacts were selected.
+
+Simple v1 assumptions:
+
+- Projection starts from an explicit witness ledger and an explicit bounded
+  selector: `--session <ID>` when witness records carry a session ID, otherwise
+  `--since <RFC3339>` / `--until <RFC3339>` with optional `--tool` and
+  `--outcome` filters.
+- Only records that parse as `witness.v0` are eligible; malformed records are
+  skipped in preview mode and refused in seal mode if selected.
+- Only local filesystem paths recorded as witness inputs are packable in v1.
+- Every selected artifact must still exist and must match the recorded hash when
+  a witness hash is present.
+- Duplicate projected member paths refuse by default. The operator must rename
+  artifacts or supply an explicit path mapping in a later design.
+- Projection must require a dry-run preview by default and an explicit
+  confirmation flag before sealing.
+- The final pack is created by the normal `seal` pipeline; projection only
+  chooses inputs and may add a projection report artifact.
+
+Non-goals:
+
+- Do not recreate missing artifacts from witness records.
+- Do not trust witness hashes over current bytes.
+- Do not silently include an entire NTM working directory.
+- Do not infer session boundaries from tmux panes unless NTM exposes stable
+  session metadata.
+- Do not include outputs from generic records until witness records have a
+  first-class `outputs[]` artifact list or an equivalent stable convention.
+
+Expected first CLI shape, subject to implementation review:
+
+```text
+pack witness project --session <NTM_SESSION_ID> --out <DIR> [--dry-run] [--yes]
+pack witness project --since <RFC3339> --until <RFC3339> --out <DIR> [--dry-run] [--yes]
+```
+
+Preview output should include:
+
+- selected witness record count
+- selected artifact paths
+- missing paths
+- hash mismatches
+- duplicate member path candidates
+- the command that would seal the projected pack
+
+Seal mode should:
+
+- refuse unless the preview has no missing paths, hash mismatches, or duplicate
+  member paths
+- write a `projection.report.json` artifact describing the selector, selected
+  records, skipped records, and final artifact list
+- include a `witness.slice.jsonl` artifact with the selected witness records
+- invoke the existing seal contract so `pack_id` and closed-set semantics remain
+  unchanged
+
+Future phases:
+
+1. Design-only contract: document the semantics above and keep implementation
+   deferred until the witness session/output fields are crisp.
+2. Local dry-run projection: implement preview from explicit ledger path and
+   time/tool/outcome filters using current `inputs[]` records only.
+3. Confirmed local sealing: generate `projection.report.json`,
+   `witness.slice.jsonl`, then call the existing seal path after explicit
+   `--yes`.
+4. NTM session integration: support `--session <ID>` once NTM records stable
+   session IDs, tournament names, and swarm metadata in witness records.
+5. Output artifact support: include record outputs once witness records expose a
+   stable `outputs[]` artifact list with path/hash/bytes.
+6. Recovery integrations: optionally resolve missing artifacts from data-fabric
+   or previous packs, but only with explicit operator approval and hash checks.
+
+---
+
 ## Execution flow
 
 ```text
@@ -777,7 +861,7 @@ Implemented post-v0.1 test tracks:
 ### Can defer
 
 - compressed archive formats (`tar.zst`), signing (`sigstore`), attestations (`in-toto`)
-- witness-driven pack projection mode (`witness export` integration)
+- witness-to-pack projection implementation beyond the design contract
 
 ### Current post-v0.1 additions
 
@@ -788,9 +872,14 @@ Implemented post-v0.1 test tracks:
 - ignored large-pack performance baseline (`tests/perf_baseline.rs`)
 - parallel seal/verify hashing controlled by `PACK_THREADS`
 - deterministic `pack archive export` / `pack archive import`
+- witness-to-pack projection design with NTM-session-first future phasing
 
 ---
 
 ## Open questions
 
-- None currently tracked in this plan; actionable questions should become beads.
+- What exact witness field should carry a stable NTM session ID?
+- Should projected packs include all successful records from a session by
+  default, or only records from selected tool families?
+- Should the projection report be mandatory in every projected pack, or should
+  operators be able to suppress it for byte-for-byte minimal packs?

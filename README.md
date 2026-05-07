@@ -659,6 +659,16 @@ pack witness count [--tool TOOL] [--since RFC3339] [--until RFC3339] [--outcome 
 - Override: set `EPISTEMIC_WITNESS` environment variable
 - Malformed ledger lines are skipped; valid lines continue to be processed.
 
+### Planned Projection
+
+The planned witness-to-pack projection mode treats an NTM session as the natural
+unit of work: a swarm or tournament produces a witness trail, then `pack` uses a
+bounded slice of that trail to choose artifacts for normal `pack seal`.
+
+Projection is only a selection layer. The pack directory remains the integrity
+root, selected files must still exist, recorded hashes must match current bytes,
+and the operator must preview the selection before sealing.
+
 </details>
 
 ---
