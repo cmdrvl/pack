@@ -39,6 +39,10 @@ pub enum Command {
         /// Optional annotation in manifest.
         #[arg(long)]
         note: Option<String>,
+
+        /// Reproducible manifest creation timestamp (RFC3339, normalized to UTC).
+        #[arg(long, value_name = "RFC3339")]
+        created: Option<String>,
     },
 
     /// Verify pack integrity (members + pack_id).

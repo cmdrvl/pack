@@ -10,7 +10,7 @@
   "invocation": {
     "binary": "pack",
     "usage": [
-      "pack seal <LOCKFILE> [<ARTIFACTS>...] [--output <DIR>] [--no-witness]",
+      "pack seal <LOCKFILE> [<ARTIFACTS>...] [--output <DIR>] [--note <TEXT>] [--created <RFC3339>] [--no-witness]",
       "pack verify <PACK_DIR> [--json] [--no-witness]",
       "pack diff <PACK_A> <PACK_B> [--json]",
       "pack push <PACK_DIR>",
@@ -35,6 +35,11 @@
     {
       "name": "seal",
       "description": "Standalone sealing interface for artifacts already on disk",
+      "options": [
+        { "name": "output", "flag": "--output", "type": "path", "description": "Output directory; defaults to pack/<pack_id>/" },
+        { "name": "note", "flag": "--note", "type": "string", "description": "Optional annotation embedded in manifest" },
+        { "name": "created", "flag": "--created", "type": "RFC3339", "description": "Reproducible manifest creation timestamp; takes precedence over SOURCE_DATE_EPOCH" }
+      ],
       "exit_codes": {
         "0": { "meaning": "PACK_CREATED", "domain": "positive" },
         "2": { "meaning": "REFUSAL", "domain": "error" }

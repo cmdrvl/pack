@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
+use serde_json::json;
 
 use crate::refusal::{RefusalCode, RefusalEnvelope};
 use crate::seal::collect::collect_artifacts;
@@ -23,6 +24,7 @@ pub fn execute_seal(
     artifacts: &[PathBuf],
     output: Option<&Path>,
     note: Option<String>,
+    created: Option<&str>,
 ) -> Result<SealResult, Box<RefusalEnvelope>> {
     // 1. Collect
     let candidates = collect_artifacts(artifacts)?;
@@ -30,8 +32,8 @@ pub fn execute_seal(
     // 2. Collision check
     check_collisions(&candidates)?;
 
-    // 3. Staging dir (in parent of final output or system temp)
-    let created = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    // 3. Resolve reproducible creation timestamp, then stage pack bytes.
+    let created = created_timestamp(created)?;
 
     // Create staging in system temp
     let staging_dir = tempfile::tempdir().map_err(|e| {
@@ -98,6 +100,7 @@ pub fn execute_seal(
     Ok(SealResult {
         pack_id: manifest.pack_id.clone(),
         output_dir: final_dir,
+        created: manifest.created,
         member_count: manifest.member_count,
         witness_inputs: candidates
             .iter()
@@ -116,8 +119,86 @@ pub fn execute_seal(
 pub struct SealResult {
     pub pack_id: String,
     pub output_dir: PathBuf,
+    pub created: String,
     pub member_count: usize,
     pub witness_inputs: Vec<WitnessInput>,
+}
+
+fn created_timestamp(cli_created: Option<&str>) -> Result<String, Box<RefusalEnvelope>> {
+    let source_date_epoch = if cli_created.is_some() {
+        None
+    } else {
+        std::env::var("SOURCE_DATE_EPOCH").ok()
+    };
+    resolve_created_timestamp(cli_created, source_date_epoch.as_deref())
+}
+
+fn resolve_created_timestamp(
+    cli_created: Option<&str>,
+    source_date_epoch: Option<&str>,
+) -> Result<String, Box<RefusalEnvelope>> {
+    if let Some(value) = cli_created {
+        return parse_created_flag(value);
+    }
+
+    if let Some(value) = source_date_epoch {
+        return parse_source_date_epoch(value);
+    }
+
+    Ok(Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true))
+}
+
+fn parse_created_flag(value: &str) -> Result<String, Box<RefusalEnvelope>> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|timestamp| {
+            timestamp
+                .with_timezone(&Utc)
+                .to_rfc3339_opts(SecondsFormat::Secs, true)
+        })
+        .map_err(|e| {
+            Box::new(RefusalEnvelope::new(
+                RefusalCode::Io,
+                Some(format!(
+                    "Invalid --created timestamp: expected RFC3339 timestamp: {e}"
+                )),
+                Some(json!({
+                    "flag": "--created",
+                    "value": value,
+                    "expected": "RFC3339 timestamp"
+                })),
+            ))
+        })
+}
+
+fn parse_source_date_epoch(value: &str) -> Result<String, Box<RefusalEnvelope>> {
+    let seconds = value.parse::<i64>().map_err(|e| {
+        Box::new(RefusalEnvelope::new(
+            RefusalCode::Io,
+            Some(format!(
+                "Invalid SOURCE_DATE_EPOCH: expected Unix seconds: {e}"
+            )),
+            Some(json!({
+                "env": "SOURCE_DATE_EPOCH",
+                "value": value,
+                "expected": "Unix seconds"
+            })),
+        ))
+    })?;
+
+    Utc.timestamp_opt(seconds, 0)
+        .single()
+        .map(|timestamp| timestamp.to_rfc3339_opts(SecondsFormat::Secs, true))
+        .ok_or_else(|| {
+            Box::new(RefusalEnvelope::new(
+                RefusalCode::Io,
+                Some("Invalid SOURCE_DATE_EPOCH: Unix seconds out of range".to_string()),
+                Some(json!({
+                    "env": "SOURCE_DATE_EPOCH",
+                    "value": value,
+                    "expected": "Unix seconds"
+                })),
+            ))
+        })
 }
 
 /// Recursively copy a directory tree.
@@ -195,7 +276,7 @@ mod tests {
         let artifacts = create_test_artifacts(&src);
         let output_dir = out.path().join("my_pack");
 
-        let result = execute_seal(&artifacts, Some(&output_dir), None).unwrap();
+        let result = execute_seal(&artifacts, Some(&output_dir), None, None).unwrap();
 
         assert!(result.pack_id.starts_with("sha256:"));
         assert_eq!(result.member_count, 2);
@@ -211,7 +292,7 @@ mod tests {
         let artifacts = create_test_artifacts(&src);
         let output_dir = out.path().join("pack_out");
 
-        let result = execute_seal(&artifacts, Some(&output_dir), None).unwrap();
+        let result = execute_seal(&artifacts, Some(&output_dir), None, None).unwrap();
         let manifest_content = fs::read_to_string(result.output_dir.join("manifest.json")).unwrap();
         let manifest: serde_json::Value = serde_json::from_str(&manifest_content).unwrap();
 
@@ -227,8 +308,13 @@ mod tests {
         let artifacts = create_test_artifacts(&src);
         let output_dir = out.path().join("noted_pack");
 
-        let result =
-            execute_seal(&artifacts, Some(&output_dir), Some("Q4 recon".to_string())).unwrap();
+        let result = execute_seal(
+            &artifacts,
+            Some(&output_dir),
+            Some("Q4 recon".to_string()),
+            None,
+        )
+        .unwrap();
         let manifest_content = fs::read_to_string(result.output_dir.join("manifest.json")).unwrap();
         let manifest: serde_json::Value = serde_json::from_str(&manifest_content).unwrap();
         assert_eq!(manifest["note"], "Q4 recon");
@@ -244,14 +330,14 @@ mod tests {
         fs::create_dir(&output_dir).unwrap();
         fs::write(output_dir.join("existing.txt"), "data").unwrap();
 
-        let err = execute_seal(&artifacts, Some(&output_dir), None).unwrap_err();
+        let err = execute_seal(&artifacts, Some(&output_dir), None, None).unwrap_err();
         assert_eq!(err.refusal.code, "E_IO");
         assert!(err.refusal.message.contains("non-empty"));
     }
 
     #[test]
     fn seal_empty_artifacts_refuses() {
-        let err = execute_seal(&[], None, None).unwrap_err();
+        let err = execute_seal(&[], None, None, None).unwrap_err();
         assert_eq!(err.refusal.code, "E_EMPTY");
     }
 
@@ -265,9 +351,42 @@ mod tests {
         fs::write(&file, content).unwrap();
 
         let output_dir = out.path().join("byte_check");
-        let result = execute_seal(&[file], Some(&output_dir), None).unwrap();
+        let result = execute_seal(&[file], Some(&output_dir), None, None).unwrap();
 
         let copied = fs::read_to_string(result.output_dir.join("data.lock.json")).unwrap();
         assert_eq!(copied, content);
+    }
+
+    #[test]
+    fn created_flag_normalizes_rfc3339_to_utc() {
+        let created =
+            resolve_created_timestamp(Some("2026-01-15T05:30:00-05:00"), Some("42")).unwrap();
+        assert_eq!(created, "2026-01-15T10:30:00Z");
+    }
+
+    #[test]
+    fn source_date_epoch_used_when_created_flag_absent() {
+        let created = resolve_created_timestamp(None, Some("42")).unwrap();
+        assert_eq!(created, "1970-01-01T00:00:42Z");
+    }
+
+    #[test]
+    fn invalid_created_flag_refuses() {
+        let err = resolve_created_timestamp(Some("not-rfc3339"), None).unwrap_err();
+        assert_eq!(err.refusal.code, "E_IO");
+        assert_eq!(
+            err.refusal.detail.as_ref().unwrap()["flag"],
+            serde_json::json!("--created")
+        );
+    }
+
+    #[test]
+    fn invalid_source_date_epoch_refuses() {
+        let err = resolve_created_timestamp(None, Some("not-epoch")).unwrap_err();
+        assert_eq!(err.refusal.code, "E_IO");
+        assert_eq!(
+            err.refusal.detail.as_ref().unwrap()["env"],
+            serde_json::json!("SOURCE_DATE_EPOCH")
+        );
     }
 }

@@ -99,7 +99,7 @@ mod tests {
         let file = src.path().join("data.lock.json");
         fs::write(&file, r#"{"version":"lock.v0","rows":5}"#).unwrap();
 
-        let result = execute_seal(&[file], Some(&out.path().join("p")), None).unwrap();
+        let result = execute_seal(&[file], Some(&out.path().join("p")), None, None).unwrap();
         (out, result.pack_id)
     }
 

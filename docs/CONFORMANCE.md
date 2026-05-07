@@ -7,6 +7,7 @@ review work.
 | Requirement ID | Contract | Evidence |
 |---|---|---|
 | PCK-MAN-001 | `pack_id` is the SHA-256 self-hash of the canonical manifest with `pack_id` empty during hashing. | `tests/seal_suite.rs::pack_id_self_hash_contract_holds`; `src/seal/manifest.rs::recompute_matches_finalized` |
+| PCK-CREATED-001 | `seal` can produce reproducible `created` timestamps via `--created` or `SOURCE_DATE_EPOCH`, with `--created` taking precedence. | `tests/seal_suite.rs::seal_created_flag_makes_manifest_reproducible`; `tests/seal_suite.rs::seal_uses_source_date_epoch_when_created_flag_absent`; `src/seal/command.rs::created_flag_normalizes_rfc3339_to_utc` |
 | PCK-DIR-001 | Pack directories are closed sets: only declared members plus `manifest.json` are allowed. | `tests/verify_suite.rs::extra_member_is_invalid`; `tests/verify_suite.rs::missing_member_is_invalid` |
 | PCK-PATH-001 | Manifest member paths must be unique, safe relative paths and must not be `manifest.json`. | `tests/verify_suite.rs::unsafe_member_path_is_invalid`; `tests/verify_suite.rs::duplicate_member_path_is_invalid`; `tests/verify_suite.rs::reserved_member_path_is_invalid` |
 | PCK-FILE-001 | Members must resolve to regular non-symlink files under the pack root. | `tests/verify_suite.rs::symlink_member_is_invalid`; `src/seal/collect.rs::symlink_refuses_with_e_io` |

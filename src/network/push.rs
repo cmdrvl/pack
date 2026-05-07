@@ -202,8 +202,13 @@ mod tests {
         fs::write(&file, r#"{"version":"rvl.v0","outcome":"NO_REAL_CHANGE"}"#).unwrap();
 
         let pack_dir = out.path().join("pack");
-        let result =
-            execute_seal(&[file], Some(&pack_dir), Some("publish me".to_string())).unwrap();
+        let result = execute_seal(
+            &[file],
+            Some(&pack_dir),
+            Some("publish me".to_string()),
+            None,
+        )
+        .unwrap();
         (out, pack_dir, result.pack_id)
     }
 

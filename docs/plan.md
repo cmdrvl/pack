@@ -100,10 +100,11 @@ Commands:
 ### Subcommand details
 
 ```text
-pack seal <ARTIFACT>... [--output <DIR>] [--note <TEXT>]
+pack seal <ARTIFACT>... [--output <DIR>] [--note <TEXT>] [--created <RFC3339>]
   <ARTIFACT>...          Files/directories to include
   --output <DIR>         Output directory (default: pack/<pack_id>/)
   --note <TEXT>          Optional annotation in manifest
+  --created <RFC3339>    Reproducible created timestamp, normalized to UTC
 
 pack verify <PACK_DIR> [--json]
 
@@ -214,7 +215,7 @@ Rules:
 |---|---|---|---|
 | `version` | string | yes | Always `"pack.v0"` |
 | `pack_id` | string | yes | Self-hash (computed last from canonical manifest with `pack_id=""`) |
-| `created` | string | yes | ISO 8601 UTC timestamp |
+| `created` | string | yes | ISO 8601 UTC timestamp; reproducible via `--created` or `SOURCE_DATE_EPOCH` |
 | `note` | string/null | no | Optional annotation |
 | `tool_version` | string | yes | `pack` semver that created the pack |
 | `members` | array | yes | Sorted member descriptors |
@@ -236,6 +237,19 @@ Rules:
 4. Set `pack_id` to `"sha256:<hex>"`.
 
 Any change in manifest content (including note, created, tool_version, members, member order, or copied bytes) changes `pack_id`.
+
+### Created timestamp selection
+
+`pack seal` resolves `created` deterministically when the operator supplies a
+timestamp source:
+
+1. `--created <RFC3339>` takes precedence and is normalized to UTC seconds.
+2. If `--created` is absent, `SOURCE_DATE_EPOCH` is accepted as Unix seconds.
+3. If neither is supplied, `created` uses the current UTC time.
+
+Invalid `--created` or `SOURCE_DATE_EPOCH` values refuse with exit `2` and a
+structured `E_IO` refusal envelope. `--created` still takes precedence even when
+`SOURCE_DATE_EPOCH` is present.
 
 ---
 
@@ -614,9 +628,10 @@ Implemented post-v0.1 test tracks:
 - `pack diff`
 - `pack push` / `pack pull`
 - witness append for `diff`, `push`, and `pull`
+- reproducible `pack seal --created <RFC3339>` and `SOURCE_DATE_EPOCH`
 
 ---
 
 ## Open questions
 
-- Should `seal` support `--created <RFC3339>` (or `SOURCE_DATE_EPOCH`) to allow reproducible repacks across different run times? Not blocking v0.1.
+- None currently tracked in this plan; actionable questions should become beads.

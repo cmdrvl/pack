@@ -25,7 +25,7 @@ If you already have the artifacts you want to preserve, start with `pack seal`. 
 ### What makes this different
 
 - **Closed-set enforcement** — only declared members plus `manifest.json` are allowed in the pack directory. Extra files cause verification failure. Nothing sneaks in.
-- **Content-addressed ID** — `pack_id` is a Merkle-root-like SHA-256 of the canonical manifest. Same artifacts always produce the same ID. Any change — even to one byte of one member — produces a different ID.
+- **Content-addressed ID** — `pack_id` is a Merkle-root-like SHA-256 of the canonical manifest. Same artifacts and manifest metadata produce the same ID; pass `--created` for reproducible repacks. Any change — even to one byte of one member — produces a different ID.
 - **Artifact type detection** — pack auto-classifies members as lockfiles, reports, profiles, or registries from their content. Known types are validated against local schemas during verification.
 - **Diff between packs** — `pack diff evidence/nov/ evidence/dec/` shows exactly which members were added, removed, or changed between two evidence sets.
 
@@ -197,14 +197,21 @@ Collect artifacts into a sealed pack directory.
 ```bash
 pack seal nov.lock.json dec.lock.json rules.json \
   --output evidence/2025-12/ \
-  --note "Q4 reconciliation"
+  --note "Q4 reconciliation" \
+  --created 2026-01-15T10:30:00Z
 ```
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--output <DIR>` | path | auto-generated | Output directory (must be empty or nonexistent) |
 | `--note <TEXT>` | string | none | Human-readable note embedded in manifest |
+| `--created <RFC3339>` | timestamp | current UTC or `SOURCE_DATE_EPOCH` | Reproducible manifest `created` timestamp |
 | `--no-witness` | flag | `false` | Suppress witness ledger recording |
+
+For reproducible repacks, pass `--created <RFC3339>`. If it is absent, `pack`
+honors `SOURCE_DATE_EPOCH` as Unix seconds; if neither is set, `created` uses
+the current UTC time. The explicit `--created` flag takes precedence over the
+environment.
 
 ### verify
 

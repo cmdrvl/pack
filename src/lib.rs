@@ -50,7 +50,13 @@ pub fn run() -> u8 {
             artifacts,
             output,
             note,
-        } => match seal::command::execute_seal(&artifacts, output.as_deref(), note.clone()) {
+            created,
+        } => match seal::command::execute_seal(
+            &artifacts,
+            output.as_deref(),
+            note.clone(),
+            created.as_deref(),
+        ) {
             Ok(result) => {
                 let output_text = format!(
                     "PACK_CREATED {}\n{}",
@@ -69,6 +75,7 @@ pub fn run() -> u8 {
                     if let Some(note) = &note {
                         params.insert("note".to_string(), Value::String(note.clone()));
                     }
+                    params.insert("created".to_string(), Value::String(result.created.clone()));
                     params.insert(
                         "member_count".to_string(),
                         Value::from(result.member_count as u64),
@@ -101,6 +108,9 @@ pub fn run() -> u8 {
                     }
                     if let Some(note) = &note {
                         params.insert("note".to_string(), Value::String(note.clone()));
+                    }
+                    if let Some(created) = &created {
+                        params.insert("created".to_string(), Value::String(created.clone()));
                     }
                     let inputs = artifacts.iter().map(|path| input_from_path(path)).collect();
                     let record = witness::WitnessRecord::new(

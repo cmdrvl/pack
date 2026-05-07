@@ -483,8 +483,13 @@ mod tests {
         fs::write(&file, r#"{"version":"rvl.v0","outcome":"NO_REAL_CHANGE"}"#).unwrap();
 
         let pack_dir = out.path().join("pack");
-        let result =
-            execute_seal(&[nested_dir], Some(&pack_dir), Some("pull me".to_string())).unwrap();
+        let result = execute_seal(
+            &[nested_dir],
+            Some(&pack_dir),
+            Some("pull me".to_string()),
+            None,
+        )
+        .unwrap();
         let manifest: Manifest =
             serde_json::from_str(&fs::read_to_string(pack_dir.join("manifest.json")).unwrap())
                 .unwrap();

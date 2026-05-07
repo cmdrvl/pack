@@ -271,6 +271,102 @@ fn seal_note_in_manifest() {
     assert_eq!(manifest["note"], "Q4 2025 reconciliation");
 }
 
+/// --created makes identical inputs reproduce the same manifest bytes and pack_id.
+#[test]
+fn seal_created_flag_makes_manifest_reproducible() {
+    let tmp = tempfile::tempdir().unwrap();
+    let art = tmp.path().join("data.json");
+    std::fs::write(&art, r#"{"version":"lock.v0","rows":5}"#).unwrap();
+    let out_a = tmp.path().join("pack_a");
+    let out_b = tmp.path().join("pack_b");
+
+    for out in [&out_a, &out_b] {
+        let output = pack_cmd()
+            .env("SOURCE_DATE_EPOCH", "not-used")
+            .args([
+                "seal",
+                art.to_str().unwrap(),
+                "--output",
+                out.to_str().unwrap(),
+                "--created",
+                "2026-01-15T10:30:00Z",
+                "--no-witness",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "seal failed: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let manifest_a = std::fs::read_to_string(out_a.join("manifest.json")).unwrap();
+    let manifest_b = std::fs::read_to_string(out_b.join("manifest.json")).unwrap();
+    assert_eq!(manifest_a, manifest_b);
+
+    let parsed: serde_json::Value = serde_json::from_str(&manifest_a).unwrap();
+    assert_eq!(parsed["created"], "2026-01-15T10:30:00Z");
+    assert!(parsed["pack_id"].as_str().unwrap().starts_with("sha256:"));
+}
+
+/// SOURCE_DATE_EPOCH controls created when --created is absent.
+#[test]
+fn seal_uses_source_date_epoch_when_created_flag_absent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let art = tmp.path().join("data.json");
+    std::fs::write(&art, r#"{"version":"lock.v0","rows":5}"#).unwrap();
+    let out = tmp.path().join("pack_out");
+
+    let output = pack_cmd()
+        .env("SOURCE_DATE_EPOCH", "42")
+        .args([
+            "seal",
+            art.to_str().unwrap(),
+            "--output",
+            out.to_str().unwrap(),
+            "--no-witness",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let manifest_content = std::fs::read_to_string(out.join("manifest.json")).unwrap();
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_content).unwrap();
+    assert_eq!(manifest["created"], "1970-01-01T00:00:42Z");
+}
+
+/// Invalid --created values refuse with a structured JSON envelope.
+#[test]
+fn seal_invalid_created_refuses_with_json_envelope() {
+    let tmp = tempfile::tempdir().unwrap();
+    let art = tmp.path().join("data.json");
+    std::fs::write(&art, r#"{"version":"lock.v0","rows":5}"#).unwrap();
+    let out = tmp.path().join("pack_out");
+
+    let output = pack_cmd()
+        .args([
+            "seal",
+            art.to_str().unwrap(),
+            "--output",
+            out.to_str().unwrap(),
+            "--created",
+            "not-rfc3339",
+            "--no-witness",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(!out.exists());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(envelope["outcome"], "REFUSAL");
+    assert_eq!(envelope["refusal"]["code"], "E_IO");
+    assert_eq!(envelope["refusal"]["detail"]["flag"], "--created");
+}
+
 /// Members bytes in sealed pack match source bytes exactly.
 #[test]
 fn sealed_member_bytes_match_source() {

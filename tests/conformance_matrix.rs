@@ -25,6 +25,23 @@ const REQUIREMENTS: &[Requirement] = &[
         ],
     },
     Requirement {
+        id: "PCK-CREATED-001",
+        evidence: &[
+            Evidence {
+                file: "tests/seal_suite.rs",
+                test: "seal_created_flag_makes_manifest_reproducible",
+            },
+            Evidence {
+                file: "tests/seal_suite.rs",
+                test: "seal_uses_source_date_epoch_when_created_flag_absent",
+            },
+            Evidence {
+                file: "src/seal/command.rs",
+                test: "created_flag_normalizes_rfc3339_to_utc",
+            },
+        ],
+    },
+    Requirement {
         id: "PCK-DIR-001",
         evidence: &[
             Evidence {
@@ -260,6 +277,7 @@ fn source_for(file: &str) -> &'static str {
         "src/operator.rs" => include_str!("../src/operator.rs"),
         "src/refusal/envelope.rs" => include_str!("../src/refusal/envelope.rs"),
         "src/seal/collect.rs" => include_str!("../src/seal/collect.rs"),
+        "src/seal/command.rs" => include_str!("../src/seal/command.rs"),
         "src/seal/manifest.rs" => include_str!("../src/seal/manifest.rs"),
         "tests/cli_scaffold.rs" => include_str!("cli_scaffold.rs"),
         "tests/refusal_suite.rs" => include_str!("refusal_suite.rs"),
