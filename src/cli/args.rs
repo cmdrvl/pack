@@ -55,6 +55,16 @@ pub enum Command {
         json: bool,
     },
 
+    /// Inspect pack metadata without verifying integrity.
+    Inspect {
+        /// Path to the pack directory.
+        pack_dir: PathBuf,
+
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Deterministically diff two packs.
     Diff {
         /// First pack directory.

@@ -121,6 +121,13 @@ Upstream tools produce individual artifacts (lockfiles, reports). `pack seal` co
 | `1` | `INVALID` | One or more integrity or schema findings |
 | `2` | `REFUSAL` | Manifest unreadable, unparseable, or unsupported version |
 
+### inspect
+
+| Exit Code | Outcome | Meaning |
+|-----------|---------|---------|
+| `0` | `METADATA` | Manifest metadata was read without verifying integrity |
+| `2` | `REFUSAL` | Manifest unreadable, unparseable, or unsupported version |
+
 ### diff
 
 | Exit Code | Outcome | Meaning |
@@ -184,6 +191,7 @@ cargo build --release
 ```bash
 pack seal <ARTIFACT>... [OPTIONS]
 pack verify <PACK_DIR> [OPTIONS]
+pack inspect <PACK_DIR> [OPTIONS]
 pack diff <A> <B> [OPTIONS]
 pack push <PACK_DIR>
 pack pull <PACK_ID> --out <DIR>
@@ -226,6 +234,21 @@ pack verify evidence/2025-12/ --json       # Machine-readable JSON
 |------|------|---------|-------------|
 | `--json` | flag | `false` | JSON report output |
 | `--no-witness` | flag | `false` | Suppress witness ledger recording |
+
+### inspect
+
+Inspect pack metadata without verifying integrity. This is for quick scanning;
+use `pack verify` before relying on hashes, closed-set membership, or `pack_id`.
+`inspect` does not append witness records.
+
+```bash
+pack inspect evidence/2025-12/              # Human metadata output
+pack inspect evidence/2025-12/ --json       # Machine-readable metadata
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | flag | `false` | JSON metadata output |
 
 ### diff
 
@@ -639,6 +662,7 @@ src/
 ├── cli/             Clap argument parsing, exit codes
 ├── seal/            Seal pipeline: collect, collision, copy, finalize, manifest
 ├── verify/          Verify pipeline: checks, schema validation, report
+├── inspect.rs       Read-only metadata inspection
 ├── diff/            Diff pipeline: compare manifests, report
 ├── detect/          Member type detection
 ├── refusal/         Refusal codes and envelope
@@ -650,6 +674,7 @@ tests/
 ├── cli_scaffold.rs      CLI surface integration tests
 ├── seal_suite.rs        Seal contract integration tests
 ├── verify_suite.rs      Verify contract integration tests
+├── conformance_matrix.rs Plan-to-test evidence checks
 ├── refusal_suite.rs     Refusal envelope integration tests
 ├── schema_validation.rs Schema validation integration tests
 └── witness_suite.rs     Witness behavior integration tests

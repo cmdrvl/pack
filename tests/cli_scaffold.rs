@@ -42,6 +42,7 @@ fn help_flag_exits_0() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("seal"));
     assert!(stdout.contains("verify"));
+    assert!(stdout.contains("inspect"));
     assert!(stdout.contains("witness"));
 }
 
@@ -84,6 +85,37 @@ fn seal_stub_exits_2() {
 fn verify_stub_exits_2() {
     let output = pack_cmd().args(["verify", "some_dir"]).output().unwrap();
     assert_eq!(output.status.code(), Some(2));
+}
+
+#[test]
+fn inspect_json_exits_0_without_integrity_claim() {
+    let tmp = tempfile::tempdir().unwrap();
+    let artifact = tmp.path().join("data.json");
+    std::fs::write(&artifact, r#"{"version":"lock.v0","rows":5}"#).unwrap();
+    let pack_dir = tmp.path().join("pack");
+
+    let seal = pack_cmd()
+        .args([
+            "--no-witness",
+            "seal",
+            artifact.to_str().unwrap(),
+            "--output",
+            pack_dir.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(seal.status.success());
+
+    let output = pack_cmd()
+        .args(["inspect", pack_dir.to_str().unwrap(), "--json"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["version"], "pack.inspect.v0");
+    assert_eq!(payload["integrity"]["verified"], false);
+    assert_eq!(payload["schema_validation"]["eligible_count"], 1);
 }
 
 #[test]

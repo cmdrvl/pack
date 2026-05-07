@@ -210,6 +210,25 @@ fn verify_invalid_records_witness() {
     assert_eq!(record["exit_code"], 1);
 }
 
+#[test]
+fn inspect_does_not_record_witness() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ledger = tmp.path().join("witness.jsonl");
+    let pack_dir = seal_temp_pack(
+        tmp.path(),
+        "inspect.json",
+        r#"{"version":"lock.v0","rows":1}"#,
+    );
+
+    let output = pack_cmd_with_witness(ledger.to_str().unwrap())
+        .args(["inspect", pack_dir.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(!ledger.exists());
+}
+
 /// Diff with changes records CHANGES witness.
 #[test]
 fn diff_changes_records_witness() {

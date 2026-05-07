@@ -32,7 +32,9 @@ mod tests {
     #[test]
     fn operator_manifest_has_all_subcommands() {
         let op = operator_json();
-        for name in ["seal", "verify", "diff", "push", "pull", "witness"] {
+        for name in [
+            "seal", "verify", "inspect", "diff", "push", "pull", "witness",
+        ] {
             subcommand(&op, name);
         }
     }
@@ -69,6 +71,11 @@ mod tests {
         assert_eq!(diff["status"], "implemented");
         assert_eq!(diff["exit_codes"]["0"]["meaning"], "NO_CHANGES");
         assert_eq!(diff["exit_codes"]["1"]["meaning"], "CHANGES");
+
+        let inspect = subcommand(&op, "inspect");
+        assert_eq!(inspect["status"], "implemented");
+        assert_eq!(inspect["witness"], "not_recorded");
+        assert_eq!(inspect["exit_codes"]["0"]["meaning"], "METADATA");
 
         let push = subcommand(&op, "push");
         assert_eq!(push["status"], "implemented");

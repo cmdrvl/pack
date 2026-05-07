@@ -12,6 +12,7 @@
     "usage": [
       "pack seal <LOCKFILE> [<ARTIFACTS>...] [--output <DIR>] [--note <TEXT>] [--created <RFC3339>] [--no-witness]",
       "pack verify <PACK_DIR> [--json] [--no-witness]",
+      "pack inspect <PACK_DIR> [--json]",
       "pack diff <PACK_A> <PACK_B> [--json]",
       "pack push <PACK_DIR>",
       "pack pull <PACK_ID> --out <DIR>",
@@ -51,6 +52,16 @@
       "exit_codes": {
         "0": { "meaning": "OK", "domain": "positive" },
         "1": { "meaning": "INVALID", "domain": "negative" },
+        "2": { "meaning": "REFUSAL", "domain": "error" }
+      }
+    },
+    {
+      "name": "inspect",
+      "description": "Read pack metadata without verifying integrity",
+      "status": "implemented",
+      "witness": "not_recorded",
+      "exit_codes": {
+        "0": { "meaning": "METADATA", "domain": "positive" },
         "2": { "meaning": "REFUSAL", "domain": "error" }
       }
     },

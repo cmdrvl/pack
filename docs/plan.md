@@ -71,7 +71,7 @@ Full chain of custody remains local-first; push/pull is optional.
 `pack` is a **subcommand tool with mixed output modes**:
 
 - `seal`: directory artifact
-- `verify` / `diff`: report output (human default, `--json` optional)
+- `verify` / `inspect` / `diff`: report output (human default, `--json` optional)
 - `push`: status output (network wrapper)
 - `pull`: status output (network wrapper)
 
@@ -85,12 +85,13 @@ pack <COMMAND> [OPTIONS]
 
 ### Commands
 
-The list below is the current interface. `seal`, `verify`, `diff`, `push`, `pull`, and `witness` are implemented.
+The list below is the current interface. `seal`, `verify`, `inspect`, `diff`, `push`, `pull`, and `witness` are implemented.
 
 ```text
 Commands:
   seal <ARTIFACT>...     Seal artifacts into an evidence pack directory
   verify <PACK_DIR>      Verify pack integrity (members + pack_id)
+  inspect <PACK_DIR>     Inspect pack metadata without verifying integrity
   diff <A> <B>           Deterministically diff two packs
   push <PACK_DIR>        Publish a pack to data-fabric
   pull <PACK_ID>         Fetch a pack by ID from data-fabric
@@ -107,6 +108,9 @@ pack seal <ARTIFACT>... [--output <DIR>] [--note <TEXT>] [--created <RFC3339>]
   --created <RFC3339>    Reproducible created timestamp, normalized to UTC
 
 pack verify <PACK_DIR> [--json]
+
+pack inspect <PACK_DIR> [--json]
+  (metadata only; does not verify hashes, closed-set membership, or pack_id)
 
 pack diff <A> <B> [--json]
 
@@ -132,6 +136,7 @@ pack witness count [filters] [--json]
 
 - `pack seal`: `0` PACK_CREATED, `2` REFUSAL
 - `pack verify`: `0` OK, `1` INVALID, `2` REFUSAL
+- `pack inspect`: `0` METADATA, `2` REFUSAL
 - `pack diff`: `0` NO_CHANGES, `1` CHANGES, `2` REFUSAL
 - `pack push`: `0` PUBLISHED, `2` REFUSAL
 - `pack pull`: `0` FETCHED, `2` REFUSAL
@@ -142,6 +147,7 @@ pack witness count [filters] [--json]
 |---|---|---|
 | `seal` | Directory artifact (`manifest.json` + copied members) | N/A |
 | `verify` | Human report | Yes |
+| `inspect` | Human metadata report | Yes |
 | `diff` | Human report | Yes |
 | `push` | Status lines | N/A |
 | `pull` | Status lines | N/A |
@@ -352,6 +358,28 @@ For `INVALID`, `invalid` contains deterministic entries like:
 
 ---
 
+## `inspect` contract
+
+`pack inspect <PACK_DIR>` reads pack metadata for quick human and agent
+orientation. It is read-only and does not verify integrity.
+
+It reports:
+
+- `pack_id`, `created`, `tool_version`, optional `note`, and `member_count`.
+- Member type counts sorted by type.
+- Up to 10 largest members by on-disk file size, with deterministic tie-breaks.
+- Schema-validation eligibility based on local validator coverage.
+- `integrity.verified=false` plus a `pack verify <PACK_DIR>` next command.
+
+It refuses with `E_BAD_PACK` when `manifest.json` is missing, malformed, or not
+`pack.v0`. Missing or unreadable member files do not make `inspect` an
+integrity verifier; their sizes are reported as unavailable and `pack verify`
+remains the integrity check.
+
+`inspect` does not append witness records.
+
+---
+
 ## `diff` contract
 
 `pack diff <A> <B>` compares manifests by member set and member hashes.
@@ -449,7 +477,7 @@ Environment:
 Recording policy:
 
 - Record for `seal`, `verify`, `diff`, `push`, and `pull`.
-- Do not record for `witness` query subcommands.
+- Do not record for `inspect` or `witness` query subcommands.
 
 Witness outcome mapping:
 
@@ -491,6 +519,12 @@ Witness outcome mapping:
      g. Validate known member schemas from local catalog (skip when unavailable)
      h. Exit 0 (OK) or 1 (INVALID) or 2 (REFUSAL)
 
+   inspect:
+     a. Read manifest.json (E_BAD_PACK on failure)
+     b. Summarize metadata, type counts, largest members, and schema eligibility
+     c. State that integrity is not verified and point to `pack verify`
+     d. Exit 0 or 2; do not append witness
+
    diff:
      a. Read both manifests
      b. Compare member sets + hashes
@@ -528,6 +562,7 @@ src/
 ├── verify/
 │   ├── verify.rs
 │   └── mod.rs
+├── inspect.rs
 ├── diff/
 │   ├── diff.rs
 │   └── mod.rs
@@ -566,7 +601,7 @@ Required highlights:
 - `name: "pack"`
 - `schema_version: "operator.v0"`
 - `output_mode: "mixed"`
-- subcommands: `seal`, `verify`, `diff`, `push`, `pull`, `witness`
+- subcommands: `seal`, `verify`, `inspect`, `diff`, `push`, `pull`, `witness`
 - refusal map: `E_EMPTY`, `E_IO`, `E_DUPLICATE`, `E_BAD_PACK`
 - exit semantics by subcommand (0/1/2 pattern)
 
@@ -609,6 +644,7 @@ maps core requirements to concrete test evidence and is checked by
   - `REFUSAL` on unreadable or malformed manifest
 - refusal envelope correctness for all refusal codes
 - witness append/no-witness behavior
+- inspect reports metadata without claiming integrity and does not append witness
 - witness query/last/count behavior on synthetic ledgers
 - `--describe` / `--schema` precedence before input validation
 - ignored large-pack performance baseline for many-small and few-large packs
@@ -617,6 +653,7 @@ maps core requirements to concrete test evidence and is checked by
 Implemented post-v0.1 test tracks:
 
 - `diff` command behavior
+- `inspect` command behavior
 - `push` / `pull` transport mapping
 - large-pack performance report shape and ignored local baseline
 

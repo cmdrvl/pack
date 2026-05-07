@@ -158,6 +158,27 @@ const REQUIREMENTS: &[Requirement] = &[
         ],
     },
     Requirement {
+        id: "PCK-INSPECT-001",
+        evidence: &[
+            Evidence {
+                file: "src/inspect.rs",
+                test: "inspect_valid_pack_json_is_deterministic_metadata",
+            },
+            Evidence {
+                file: "src/inspect.rs",
+                test: "inspect_human_output_avoids_integrity_claim",
+            },
+            Evidence {
+                file: "src/inspect.rs",
+                test: "inspect_malformed_manifest_refuses",
+            },
+            Evidence {
+                file: "tests/witness_suite.rs",
+                test: "inspect_does_not_record_witness",
+            },
+        ],
+    },
+    Requirement {
         id: "PCK-DIFF-001",
         evidence: &[
             Evidence {
@@ -336,6 +357,7 @@ fn source_for(file: &str) -> &'static str {
     match file {
         "src/detect/member_type.rs" => include_str!("../src/detect/member_type.rs"),
         "src/diff/command.rs" => include_str!("../src/diff/command.rs"),
+        "src/inspect.rs" => include_str!("../src/inspect.rs"),
         "src/network/pull.rs" => include_str!("../src/network/pull.rs"),
         "src/network/push.rs" => include_str!("../src/network/push.rs"),
         "src/network/transport.rs" => include_str!("../src/network/transport.rs"),

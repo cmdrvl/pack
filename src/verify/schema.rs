@@ -91,6 +91,11 @@ fn schema_for_version(version: &str) -> Option<Validator> {
     }
 }
 
+/// Return true when a member artifact version has a local schema validator.
+pub fn has_schema_for_version(version: &str) -> bool {
+    schema_for_version(version).is_some()
+}
+
 /// lock.v0: JSON object with "version" == "lock.v0"
 fn validate_lock_v0(content: &[u8]) -> Result<(), String> {
     let value = parse_json(content)?;

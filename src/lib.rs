@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod detect;
 pub mod diff;
+pub mod inspect;
 pub mod network;
 pub mod operator;
 mod parallel;
@@ -152,6 +153,12 @@ pub fn run() -> u8 {
                 );
                 append_witness_warning(&record);
             }
+            println!("{output}");
+            exit_code
+        }
+        // Inspect is intentionally read-only metadata and does not append witness records.
+        Command::Inspect { pack_dir, json } => {
+            let (output, exit_code) = inspect::execute_inspect(&pack_dir, json);
             println!("{output}");
             exit_code
         }
