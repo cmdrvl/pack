@@ -30,9 +30,9 @@ pub fn operator_json() -> Value {
                 }
             },
             "diff": {
-                "description": "Deterministically diff two packs (deferred in v0.1)",
+                "description": "Deterministically diff two packs",
                 "output_mode": "report",
-                "status": "deferred",
+                "status": "implemented",
                 "exit_codes": {
                     "0": "NO_CHANGES",
                     "1": "CHANGES",
@@ -42,6 +42,7 @@ pub fn operator_json() -> Value {
             "push": {
                 "description": "Publish a pack to data-fabric",
                 "output_mode": "status",
+                "status": "implemented",
                 "exit_codes": {
                     "0": "PUBLISHED",
                     "2": "REFUSAL"
@@ -50,6 +51,7 @@ pub fn operator_json() -> Value {
             "pull": {
                 "description": "Fetch a pack by ID from data-fabric",
                 "output_mode": "status",
+                "status": "implemented",
                 "exit_codes": {
                     "0": "FETCHED",
                     "2": "REFUSAL"
@@ -59,7 +61,8 @@ pub fn operator_json() -> Value {
                 "description": "Query witness ledger",
                 "output_mode": "report",
                 "exit_codes": {
-                    "0": "OK"
+                    "0": "OK",
+                    "2": "REFUSAL"
                 }
             }
         },
@@ -119,6 +122,19 @@ mod tests {
         assert_eq!(verify["0"], "OK");
         assert_eq!(verify["1"], "INVALID");
         assert_eq!(verify["2"], "REFUSAL");
+
+        let diff = &op["subcommands"]["diff"];
+        assert_eq!(diff["status"], "implemented");
+        assert_eq!(diff["exit_codes"]["0"], "NO_CHANGES");
+        assert_eq!(diff["exit_codes"]["1"], "CHANGES");
+
+        let push = &op["subcommands"]["push"];
+        assert_eq!(push["status"], "implemented");
+        assert_eq!(push["exit_codes"]["0"], "PUBLISHED");
+
+        let pull = &op["subcommands"]["pull"];
+        assert_eq!(pull["status"], "implemented");
+        assert_eq!(pull["exit_codes"]["0"], "FETCHED");
     }
 
     #[test]

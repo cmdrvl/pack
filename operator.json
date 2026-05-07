@@ -13,6 +13,8 @@
       "pack seal <LOCKFILE> [<ARTIFACTS>...] [--output <DIR>] [--no-witness]",
       "pack verify <PACK_DIR> [--json] [--no-witness]",
       "pack diff <PACK_A> <PACK_B> [--json]",
+      "pack push <PACK_DIR>",
+      "pack pull <PACK_ID> --out <DIR>",
       "pack witness <query|last|count> [OPTIONS]"
     ],
     "output_mode": "mixed",
@@ -50,7 +52,7 @@
     {
       "name": "diff",
       "description": "Deterministically diff two packs",
-      "status": "deferred",
+      "status": "implemented",
       "exit_codes": {
         "0": { "meaning": "NO_CHANGES", "domain": "positive" },
         "1": { "meaning": "CHANGES", "domain": "negative" },
@@ -58,8 +60,30 @@
       }
     },
     {
+      "name": "push",
+      "description": "Publish a pack to data-fabric",
+      "status": "implemented",
+      "exit_codes": {
+        "0": { "meaning": "PUBLISHED", "domain": "positive" },
+        "2": { "meaning": "REFUSAL", "domain": "error" }
+      }
+    },
+    {
+      "name": "pull",
+      "description": "Fetch a pack by ID from data-fabric",
+      "status": "implemented",
+      "exit_codes": {
+        "0": { "meaning": "FETCHED", "domain": "positive" },
+        "2": { "meaning": "REFUSAL", "domain": "error" }
+      }
+    },
+    {
       "name": "witness",
-      "description": "Query witness ledger"
+      "description": "Query witness ledger",
+      "exit_codes": {
+        "0": { "meaning": "OK", "domain": "positive" },
+        "2": { "meaning": "REFUSAL", "domain": "error" }
+      }
     }
   ],
 
@@ -73,7 +97,7 @@
     { "code": "E_EMPTY", "message": "Seal called with no artifacts", "action": "escalate" },
     { "code": "E_IO", "message": "Cannot read input, write output, or read pack directory", "action": "escalate" },
     { "code": "E_DUPLICATE", "message": "Member path collision during seal (including reserved paths)", "action": "escalate" },
-    { "code": "E_BAD_PACK", "message": "Missing or invalid manifest.json for verify/diff/push", "action": "escalate" }
+    { "code": "E_BAD_PACK", "message": "Missing or invalid manifest.json for verify/diff/push/pull", "action": "escalate" }
   ],
 
   "capabilities": {
@@ -82,7 +106,7 @@
     "streaming": false,
     "witness": {
       "ambient_recording": "enabled_by_default",
-      "query_subcommands": false,
+      "query_subcommands": true,
       "no_witness_flag": "suppresses_recording"
     }
   },

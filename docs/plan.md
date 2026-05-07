@@ -77,7 +77,7 @@ Full chain of custody remains local-first; push/pull is optional.
 
 ---
 
-## CLI (v0.1 target)
+## CLI (current)
 
 ```text
 pack <COMMAND> [OPTIONS]
@@ -85,13 +85,13 @@ pack <COMMAND> [OPTIONS]
 
 ### Commands
 
-The list below is the full interface roadmap. v0.1 ships the subset in [Scope: v0.1](#scope-v01-ship-this).
+The list below is the current interface. `seal`, `verify`, `diff`, `push`, `pull`, and `witness` are implemented.
 
 ```text
 Commands:
   seal <ARTIFACT>...     Seal artifacts into an evidence pack directory
   verify <PACK_DIR>      Verify pack integrity (members + pack_id)
-  diff <A> <B>           Deterministically diff two packs (deferred in v0.1)
+  diff <A> <B>           Deterministically diff two packs
   push <PACK_DIR>        Publish a pack to data-fabric
   pull <PACK_ID>         Fetch a pack by ID from data-fabric
   witness <query|last|count>  Query witness ledger
@@ -108,7 +108,6 @@ pack seal <ARTIFACT>... [--output <DIR>] [--note <TEXT>]
 pack verify <PACK_DIR> [--json]
 
 pack diff <A> <B> [--json]
-  (deferred in v0.1)
 
 pack push <PACK_DIR>
   (thin data-fabric wrapper; requires PACK_DATA_FABRIC_BASE_URL)
@@ -142,7 +141,7 @@ pack witness count [filters] [--json]
 |---|---|---|
 | `seal` | Directory artifact (`manifest.json` + copied members) | N/A |
 | `verify` | Human report | Yes |
-| `diff` | Human report (deferred v0.1) | Yes |
+| `diff` | Human report | Yes |
 | `push` | Status lines | N/A |
 | `pull` | Status lines | N/A |
 | `witness` | Human report | Yes |
@@ -339,7 +338,7 @@ For `INVALID`, `invalid` contains deterministic entries like:
 
 ---
 
-## `diff` contract (roadmap; deferred in v0.1)
+## `diff` contract
 
 `pack diff <A> <B>` compares manifests by member set and member hashes.
 
@@ -419,12 +418,10 @@ Failure mapping:
 - Path: `EPISTEMIC_WITNESS` or `~/.epistemic/witness.jsonl`.
 - Witness append failure never changes domain exit semantics.
 
-Recording policy in v0.1 target:
+Recording policy:
 
-- Record for `seal`, `verify`, and implemented `diff`.
+- Record for `seal`, `verify`, `diff`, `push`, and `pull`.
 - Do not record for `witness` query subcommands.
-- `push` records when implemented.
-- `pull` records when implemented.
 
 Witness outcome mapping:
 
@@ -466,7 +463,7 @@ Witness outcome mapping:
      g. Validate known member schemas from local catalog (skip when unavailable)
      h. Exit 0 (OK) or 1 (INVALID) or 2 (REFUSAL)
 
-   diff (when implemented):
+   diff:
      a. Read both manifests
      b. Compare member sets + hashes
      c. Exit 0/1/2
@@ -476,9 +473,10 @@ Witness outcome mapping:
      b. PUT manifest + member payload to data-fabric by `pack_id`
      c. Exit 0 or 2
 
-   pull (when implemented):
+   pull:
      a. Transport call to data-fabric
-     b. Exit 0 or 2
+     b. Materialize manifest + members under `--out`
+     c. Exit 0 or 2
 
 6. Append witness record (if applicable, if not --no-witness)
 7. Exit
@@ -502,7 +500,7 @@ src/
 ├── verify/
 │   ├── verify.rs
 │   └── mod.rs
-├── diff/                # deferred in v0.1
+├── diff/
 │   ├── diff.rs
 │   └── mod.rs
 ├── network/
@@ -582,14 +580,14 @@ Required highlights:
 - witness query/last/count behavior on synthetic ledgers
 - `--describe` / `--schema` precedence before input validation
 
-Deferred test tracks:
+Implemented post-v0.1 test tracks:
 
 - `diff` command behavior
 - `push` / `pull` transport mapping
 
 ---
 
-## Scope: v0.1 (ship this)
+## Scope: v0.1 (shipped baseline)
 
 ### Must have
 
@@ -604,10 +602,14 @@ Deferred test tracks:
 
 ### Can defer
 
-- `pack diff`
-- `pack push` / `pack pull`
 - archive formats (`tar.zst`), signing (`sigstore`), attestations (`in-toto`)
 - witness-driven pack projection mode (`witness export` integration)
+
+### Current post-v0.1 additions
+
+- `pack diff`
+- `pack push` / `pack pull`
+- witness append for `diff`, `push`, and `pull`
 
 ---
 
