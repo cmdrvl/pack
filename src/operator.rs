@@ -80,6 +80,28 @@ mod tests {
     }
 
     #[test]
+    fn operator_manifest_documents_transport_env_knobs() {
+        let op = operator_json();
+        let transport = &op["capabilities"]["transport"];
+
+        assert_eq!(transport["base_url_env"], "PACK_DATA_FABRIC_BASE_URL");
+        assert_eq!(
+            transport["timeout_secs_env"],
+            "PACK_DATA_FABRIC_TIMEOUT_SECS"
+        );
+        assert_eq!(transport["retries_env"], "PACK_DATA_FABRIC_RETRIES");
+        assert_eq!(
+            transport["retry_backoff_ms_env"],
+            "PACK_DATA_FABRIC_RETRY_BACKOFF_MS"
+        );
+        assert_eq!(transport["default_retries"], 2);
+        assert!(transport["retry_methods"]
+            .as_array()
+            .unwrap()
+            .contains(&Value::String("PUT".to_string())));
+    }
+
+    #[test]
     fn compiled_operator_matches_checked_in_operator_json() {
         let checked_in: Value =
             serde_json::from_str(OPERATOR_JSON).expect("operator.json must parse");

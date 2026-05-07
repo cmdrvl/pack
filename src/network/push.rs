@@ -8,7 +8,10 @@ use crate::refusal::{RefusalCode, RefusalEnvelope};
 use crate::seal::manifest::Manifest;
 use crate::verify::run_checks;
 
-use super::transport::{refusal_for_transport, DataFabricTransport, TransportRequest};
+use super::transport::{
+    refusal_for_transport, transport_policy_from_env, DataFabricTransport, TransportPolicy,
+    TransportRequest,
+};
 
 pub const DATA_FABRIC_BASE_URL_ENV: &str = "PACK_DATA_FABRIC_BASE_URL";
 
@@ -19,17 +22,27 @@ pub struct PushResult {
 
 pub fn execute_push(pack_dir: &Path) -> Result<PushResult, Box<RefusalEnvelope>> {
     let base_url = data_fabric_base_url_from_env(|key| std::env::var(key).ok())?;
-    execute_push_with_base_url(pack_dir, &base_url)
+    let policy = transport_policy_from_env(|key| std::env::var(key).ok())?;
+    execute_push_with_base_url_and_policy(pack_dir, &base_url, policy)
 }
 
+#[cfg(test)]
 fn execute_push_with_base_url(
     pack_dir: &Path,
     base_url: &str,
 ) -> Result<PushResult, Box<RefusalEnvelope>> {
+    execute_push_with_base_url_and_policy(pack_dir, base_url, TransportPolicy::default())
+}
+
+fn execute_push_with_base_url_and_policy(
+    pack_dir: &Path,
+    base_url: &str,
+    policy: TransportPolicy,
+) -> Result<PushResult, Box<RefusalEnvelope>> {
     let manifest = load_and_validate_manifest(pack_dir)?;
     let payload = build_publish_payload(pack_dir, &manifest)?;
     let request = TransportRequest::put(pack_path(&manifest.pack_id), payload);
-    let transport = DataFabricTransport::new(base_url);
+    let transport = DataFabricTransport::new(base_url).with_policy(policy);
 
     transport
         .send(&request)

@@ -113,6 +113,17 @@
       "ambient_recording": "enabled_by_default",
       "query_subcommands": true,
       "no_witness_flag": "suppresses_recording"
+    },
+    "transport": {
+      "base_url_env": "PACK_DATA_FABRIC_BASE_URL",
+      "timeout_secs_env": "PACK_DATA_FABRIC_TIMEOUT_SECS",
+      "retries_env": "PACK_DATA_FABRIC_RETRIES",
+      "retry_backoff_ms_env": "PACK_DATA_FABRIC_RETRY_BACKOFF_MS",
+      "default_timeout_secs": 30,
+      "default_retries": 2,
+      "default_retry_backoff_ms": 100,
+      "retry_methods": ["GET", "PUT"],
+      "retry_statuses": [408, 429, "5xx"]
     }
   },
 

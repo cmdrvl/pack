@@ -260,6 +260,9 @@ Environment:
 | Variable | Description |
 |----------|-------------|
 | `PACK_DATA_FABRIC_BASE_URL` | Base URL for the data-fabric publish endpoint |
+| `PACK_DATA_FABRIC_TIMEOUT_SECS` | Per-attempt connect/read/write timeout, default `30`, allowed `1..3600` |
+| `PACK_DATA_FABRIC_RETRIES` | Retries after the first attempt for idempotent `GET`/`PUT`, default `2`, allowed `0..10` |
+| `PACK_DATA_FABRIC_RETRY_BACKOFF_MS` | Linear retry backoff base in milliseconds, default `100`, allowed `0..60000` |
 
 ### pull
 
@@ -461,7 +464,7 @@ pack verify evidence/2025-12/ --json | jq '.invalid[] | select(.code == "EXTRA_M
 | Limitation | Detail |
 |------------|--------|
 | **Directory-based** | Packs are directories, not archives — no tar/zip output |
-| **Requires configured transport** | `push`/`pull` require `PACK_DATA_FABRIC_BASE_URL` |
+| **Requires configured transport** | `push`/`pull` require `PACK_DATA_FABRIC_BASE_URL`; timeout and retry knobs are env-configured |
 | **No signing** | pack verifies content integrity, not author identity |
 | **No incremental packs** | Each pack is a complete snapshot — no delta packs |
 | **No streaming verify** | Entire pack must be on disk — no remote verification |

@@ -382,6 +382,8 @@ Thin wrappers to data-fabric; no new domain logic.
 
 - Publish manifest + member metadata under `pack_id`.
 - Idempotent for same `pack_id`.
+- Retry only idempotent transport methods (`PUT` for push, `GET` for pull) on network failures, HTTP 408, HTTP 429, and HTTP 5xx.
+- Refuse without retrying on non-retryable server responses, malformed success responses, and malformed transport configuration.
 
 `pull`:
 
@@ -393,6 +395,16 @@ Thin wrappers to data-fabric; no new domain logic.
 Failure mapping:
 
 - Network / transport / not-found issues → refusal (exit 2).
+- Transport refusal detail includes the failure kind and attempt count.
+
+Environment:
+
+| Variable | Default | Contract |
+|---|---:|---|
+| `PACK_DATA_FABRIC_BASE_URL` | required | Base URL for `PUT /packs/<pack_id>` and `GET /packs/<pack_id>`. |
+| `PACK_DATA_FABRIC_TIMEOUT_SECS` | `30` | Per-attempt connect/read/write timeout; valid range `1..3600`. |
+| `PACK_DATA_FABRIC_RETRIES` | `2` | Retries after the first attempt for idempotent requests; valid range `0..10`. |
+| `PACK_DATA_FABRIC_RETRY_BACKOFF_MS` | `100` | Linear backoff base between retries; valid range `0..60000`. |
 
 ---
 

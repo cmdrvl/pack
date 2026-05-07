@@ -16,7 +16,10 @@ use crate::staging::{
 use crate::verify::run_checks;
 
 use super::push::DATA_FABRIC_BASE_URL_ENV;
-use super::transport::{refusal_for_transport, DataFabricTransport, TransportRequest};
+use super::transport::{
+    refusal_for_transport, transport_policy_from_env, DataFabricTransport, TransportPolicy,
+    TransportRequest,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PullResult {
@@ -53,16 +56,27 @@ struct DecodedMember {
 
 pub fn execute_pull(pack_id: &str, out_dir: &Path) -> Result<PullResult, Box<RefusalEnvelope>> {
     let base_url = data_fabric_base_url_from_env(|key| std::env::var(key).ok())?;
-    execute_pull_with_base_url(pack_id, out_dir, &base_url)
+    let policy = transport_policy_from_env(|key| std::env::var(key).ok())?;
+    execute_pull_with_base_url_and_policy(pack_id, out_dir, &base_url, policy)
 }
 
+#[cfg(test)]
 fn execute_pull_with_base_url(
     pack_id: &str,
     out_dir: &Path,
     base_url: &str,
 ) -> Result<PullResult, Box<RefusalEnvelope>> {
+    execute_pull_with_base_url_and_policy(pack_id, out_dir, base_url, TransportPolicy::default())
+}
+
+fn execute_pull_with_base_url_and_policy(
+    pack_id: &str,
+    out_dir: &Path,
+    base_url: &str,
+    policy: TransportPolicy,
+) -> Result<PullResult, Box<RefusalEnvelope>> {
     let request = TransportRequest::get(pack_path(pack_id));
-    let transport = DataFabricTransport::new(base_url);
+    let transport = DataFabricTransport::new(base_url).with_policy(policy);
     let stored: StoredPack = transport
         .send_json(&request)
         .map_err(|error| Box::new(refusal_for_transport("pull", &error)))?;
