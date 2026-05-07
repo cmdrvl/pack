@@ -53,6 +53,15 @@ fn describe_short_circuits_before_validation() {
 }
 
 #[test]
+fn describe_matches_checked_in_operator_json() {
+    let output = pack_cmd().arg("--describe").output().unwrap();
+    assert!(output.status.success());
+    let actual: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let expected: Value = serde_json::from_str(include_str!("../operator.json")).unwrap();
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn schema_short_circuits_before_validation() {
     // --schema should exit 0 even without a subcommand
     let output = pack_cmd().arg("--schema").output().unwrap();
