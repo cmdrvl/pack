@@ -2,6 +2,7 @@ pub mod archive;
 pub mod cli;
 pub mod detect;
 pub mod diff;
+pub mod doctor;
 pub mod inspect;
 pub mod network;
 pub mod operator;
@@ -278,6 +279,12 @@ pub fn run() -> u8 {
         Command::Archive { command } => dispatch_archive(command),
         // Witness query subcommands do NOT record witness.
         Command::Witness { command } => dispatch_witness(command),
+        // Doctor commands are read-only diagnostics and do NOT record witness.
+        Command::Doctor {
+            robot_triage,
+            json,
+            action,
+        } => doctor::dispatch(robot_triage, json, action.as_ref()),
     }
 }
 

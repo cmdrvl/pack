@@ -113,6 +113,12 @@ jobs:
         run: ./target/release/pack --describe
       - name: Smoke - schema
         run: ./target/release/pack --schema
+      - name: Smoke - doctor surface
+        run: |
+          ./target/release/pack doctor health
+          ./target/release/pack doctor capabilities --json
+          ./target/release/pack doctor robot-docs
+          ./target/release/pack doctor --robot-triage
       - name: Smoke - seal + verify round-trip
         run: |
           ./target/release/pack seal fixtures/artifacts/nov.lock.json fixtures/artifacts/rules.json \

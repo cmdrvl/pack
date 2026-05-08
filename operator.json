@@ -1,7 +1,7 @@
 {
   "schema_version": "operator.v0",
   "name": "pack",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Standalone sealing entrypoint for lockfiles, reports, rules, and registry artifacts",
   "repository": "https://github.com/cmdrvl/pack",
   "license": "MIT",
@@ -18,7 +18,11 @@
       "pack pull <PACK_ID> --out <DIR>",
       "pack archive export <PACK_DIR> --out <FILE>",
       "pack archive import <ARCHIVE> --out <DIR>",
-      "pack witness <query|last|count> [OPTIONS]"
+      "pack witness <query|last|count> [OPTIONS]",
+      "pack doctor health [--json]",
+      "pack doctor capabilities --json",
+      "pack doctor robot-docs",
+      "pack doctor --robot-triage"
     ],
     "output_mode": "mixed",
     "output_schema": "pack.v0",
@@ -112,6 +116,43 @@
         "0": { "meaning": "OK", "domain": "positive" },
         "2": { "meaning": "REFUSAL", "domain": "error" }
       }
+    },
+    {
+      "name": "doctor",
+      "description": "Read-only diagnostics for agents and operators",
+      "status": "implemented",
+      "read_only": true,
+      "witness": "not_recorded",
+      "fix_mode": "not_available",
+      "commands": [
+        "pack doctor health",
+        "pack doctor health --json",
+        "pack doctor capabilities --json",
+        "pack doctor robot-docs",
+        "pack doctor --robot-triage"
+      ],
+      "side_effects": {
+        "reads_pack_inputs": false,
+        "reads_pack_members": false,
+        "walks_pack_dirs": false,
+        "seals_packs": false,
+        "verifies_pack_integrity": false,
+        "diffs_pack_dirs": false,
+        "pushes_data_fabric": false,
+        "pulls_data_fabric": false,
+        "exports_archives": false,
+        "imports_archives": false,
+        "writes_witness_ledger": false,
+        "creates_witness_directory": false,
+        "writes_doctor_artifacts": false,
+        "rewrites_operator_manifest": false,
+        "rewrites_schema": false,
+        "uses_network": false
+      },
+      "exit_codes": {
+        "0": { "meaning": "DOCTOR_OK", "domain": "positive" },
+        "2": { "meaning": "CLI_USAGE", "domain": "error" }
+      }
     }
   ],
 
@@ -147,6 +188,11 @@
       "default_retry_backoff_ms": 100,
       "retry_methods": ["GET", "PUT"],
       "retry_statuses": [408, 429, "5xx"]
+    },
+    "doctor": {
+      "read_only": true,
+      "robot_triage": true,
+      "fix_mode": "not_available"
     }
   },
 

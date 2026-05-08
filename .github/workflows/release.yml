@@ -58,6 +58,16 @@ jobs:
             exit 1
           fi
 
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Smoke doctor surface
+        shell: bash
+        run: |
+          cargo run --locked -- doctor health
+          cargo run --locked -- doctor capabilities --json
+          cargo run --locked -- doctor robot-docs
+          cargo run --locked -- doctor --robot-triage
+
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}

@@ -205,6 +205,8 @@ pack pull <PACK_ID> --out <DIR>
 pack archive export <PACK_DIR> --out <FILE>
 pack archive import <ARCHIVE> --out <DIR>
 pack witness <query|last|count> [OPTIONS]
+pack doctor <health|capabilities|robot-docs> [OPTIONS]
+pack doctor --robot-triage
 ```
 
 ### seal
@@ -340,6 +342,23 @@ evidence/2025-12.pack.tar
 ARCHIVE_IMPORTED sha256:...
 recovered/2025-12/
 ```
+
+### doctor
+
+Read-only diagnostics for agents and operators. Doctor commands do not seal
+packs, verify integrity, walk pack directories, call data-fabric, import or
+export archives, append witness records, create witness directories, write
+doctor artifacts, rewrite metadata, or use the network.
+
+```bash
+pack doctor health
+pack doctor health --json
+pack doctor capabilities --json
+pack doctor robot-docs
+pack doctor --robot-triage
+```
+
+No fix mode is available. `pack doctor --fix` is intentionally unsupported.
 
 ### Global Flags
 

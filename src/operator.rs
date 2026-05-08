@@ -17,7 +17,7 @@ mod tests {
             .expect("operator subcommands must be an array")
             .iter()
             .find(|subcommand| subcommand["name"] == name)
-            .unwrap_or_else(|| panic!("missing operator subcommand {name}"))
+            .expect("missing operator subcommand")
     }
 
     #[test]
@@ -33,7 +33,7 @@ mod tests {
     fn operator_manifest_has_all_subcommands() {
         let op = operator_json();
         for name in [
-            "seal", "verify", "inspect", "diff", "push", "pull", "archive", "witness",
+            "seal", "verify", "inspect", "diff", "push", "pull", "archive", "witness", "doctor",
         ] {
             subcommand(&op, name);
         }
@@ -92,6 +92,12 @@ mod tests {
             archive["exit_codes"]["0"]["meaning"],
             "ARCHIVE_CREATED or ARCHIVE_IMPORTED"
         );
+
+        let doctor = subcommand(&op, "doctor");
+        assert_eq!(doctor["status"], "implemented");
+        assert_eq!(doctor["read_only"], true);
+        assert_eq!(doctor["witness"], "not_recorded");
+        assert_eq!(doctor["fix_mode"], "not_available");
     }
 
     #[test]

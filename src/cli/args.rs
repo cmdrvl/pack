@@ -105,6 +105,40 @@ pub enum Command {
         #[command(subcommand)]
         command: WitnessCommand,
     },
+
+    /// Run read-only diagnostics for agents and operators.
+    Doctor {
+        /// Emit machine-readable triage JSON for agents.
+        #[arg(long = "robot-triage")]
+        robot_triage: bool,
+
+        /// Output health as JSON when no doctor subcommand is provided.
+        #[arg(long)]
+        json: bool,
+
+        #[command(subcommand)]
+        action: Option<DoctorAction>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DoctorAction {
+    /// Run read-only health checks.
+    Health {
+        /// Output JSON.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Describe supported doctor capabilities.
+    Capabilities {
+        /// Output JSON.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Print agent-oriented doctor documentation.
+    RobotDocs,
 }
 
 #[derive(Subcommand, Debug)]
