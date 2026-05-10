@@ -162,6 +162,7 @@ mod tests {
             pack_id: pack_id.to_string(),
             created: "2026-01-15T00:00:00Z".to_string(),
             note: None,
+            primary_outcome_tag: None,
             tool_version: "0.1.0".to_string(),
             members,
             member_count,

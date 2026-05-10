@@ -281,6 +281,7 @@ mod tests {
             Some(&pack_dir),
             Some("inspect me".to_string()),
             None,
+            None,
         )
         .unwrap();
         (tmp, pack_dir, result.pack_id)

@@ -20,6 +20,15 @@ mod tests {
             .expect("missing operator subcommand")
     }
 
+    fn seal_option<'a>(op: &'a Value, name: &str) -> &'a Value {
+        subcommand(op, "seal")["options"]
+            .as_array()
+            .expect("seal options must be an array")
+            .iter()
+            .find(|option| option["name"] == name)
+            .expect("missing seal option")
+    }
+
     #[test]
     fn operator_manifest_has_required_fields() {
         let op = operator_json();
@@ -98,6 +107,13 @@ mod tests {
         assert_eq!(doctor["read_only"], true);
         assert_eq!(doctor["witness"], "not_recorded");
         assert_eq!(doctor["fix_mode"], "not_available");
+    }
+
+    #[test]
+    fn operator_manifest_documents_seal_outcome_option() {
+        let op = operator_json();
+        let outcome = seal_option(&op, "outcome");
+        assert_eq!(outcome["flag"], "--outcome");
     }
 
     #[test]

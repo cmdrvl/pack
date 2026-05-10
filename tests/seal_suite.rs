@@ -367,6 +367,119 @@ fn seal_invalid_created_refuses_with_json_envelope() {
     assert_eq!(envelope["refusal"]["detail"]["flag"], "--created");
 }
 
+/// --outcome stores a canonical outcome tag in the manifest.
+#[test]
+fn seal_outcome_in_manifest() {
+    let tmp = tempfile::tempdir().unwrap();
+    let art = tmp.path().join("data.json");
+    std::fs::write(&art, r#"{"version":"lock.v0","rows":5}"#).unwrap();
+    let out = tmp.path().join("outcome_pack");
+
+    let output = pack_cmd()
+        .args([
+            "seal",
+            art.to_str().unwrap(),
+            "--output",
+            out.to_str().unwrap(),
+            "--created",
+            "2026-01-15T10:30:00Z",
+            "--outcome",
+            "cmdrvl://catalog/example/canon/entity/outcome/NO_REAL_CHANGE",
+            "--no-witness",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let manifest_content = std::fs::read_to_string(out.join("manifest.json")).unwrap();
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_content).unwrap();
+    assert_eq!(
+        manifest["primary_outcome_tag"],
+        "cmdrvl://catalog/example/canon/entity/outcome/NO_REAL_CHANGE"
+    );
+}
+
+/// --outcome changes pack_id while staying stable for repeated seals with same inputs.
+#[test]
+fn seal_outcome_changes_pack_id_and_is_reproducible() {
+    let tmp = tempfile::tempdir().unwrap();
+    let art = tmp.path().join("data.json");
+    std::fs::write(&art, r#"{"version":"lock.v0","rows":5}"#).unwrap();
+
+    let base_out = tmp.path().join("base");
+    let out_a = tmp.path().join("with_outcome_a");
+    let out_b = tmp.path().join("with_outcome_b");
+
+    let seal = |out: &std::path::Path, outcome: Option<&str>| -> serde_json::Value {
+        let mut args = vec![
+            "seal",
+            art.to_str().unwrap(),
+            "--output",
+            out.to_str().unwrap(),
+            "--created",
+            "2026-01-15T10:30:00Z",
+            "--no-witness",
+        ];
+        if let Some(tag) = outcome {
+            args.push("--outcome");
+            args.push(tag);
+        }
+        let output = pack_cmd().args(args).output().unwrap();
+        assert!(
+            output.status.success(),
+            "seal failed: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let manifest_content = std::fs::read_to_string(out.join("manifest.json")).unwrap();
+        serde_json::from_str(&manifest_content).unwrap()
+    };
+
+    let no_outcome = seal(&base_out, None);
+    let with_outcome_a = seal(
+        &out_a,
+        Some("cmdrvl://catalog/example/canon/entity/outcome/NO_REAL_CHANGE"),
+    );
+    let with_outcome_b = seal(
+        &out_b,
+        Some("cmdrvl://catalog/example/canon/entity/outcome/NO_REAL_CHANGE"),
+    );
+
+    assert_ne!(no_outcome["pack_id"], with_outcome_a["pack_id"]);
+    assert_eq!(with_outcome_a["pack_id"], with_outcome_b["pack_id"]);
+}
+
+/// Non-canonical --outcome values refuse with a structured envelope.
+#[test]
+fn seal_invalid_outcome_refuses_with_json_envelope() {
+    let tmp = tempfile::tempdir().unwrap();
+    let art = tmp.path().join("data.json");
+    std::fs::write(&art, r#"{"version":"lock.v0","rows":5}"#).unwrap();
+    let out = tmp.path().join("pack_out");
+
+    let output = pack_cmd()
+        .args([
+            "seal",
+            art.to_str().unwrap(),
+            "--output",
+            out.to_str().unwrap(),
+            "--outcome",
+            "outcome:bdc",
+            "--no-witness",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(!out.exists());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(envelope["outcome"], "REFUSAL");
+    assert_eq!(envelope["refusal"]["code"], "E_IO");
+    assert_eq!(envelope["refusal"]["detail"]["flag"], "--outcome");
+    assert_eq!(envelope["refusal"]["detail"]["expected"], "cmdrvl://...");
+}
+
 /// Members bytes in sealed pack match source bytes exactly.
 #[test]
 fn sealed_member_bytes_match_source() {

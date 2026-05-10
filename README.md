@@ -223,12 +223,14 @@ pack seal nov.lock.json dec.lock.json rules.json \
 | `--output <DIR>` | path | auto-generated | Output directory (must be empty or nonexistent) |
 | `--note <TEXT>` | string | none | Human-readable note embedded in manifest |
 | `--created <RFC3339>` | timestamp | current UTC or `SOURCE_DATE_EPOCH` | Reproducible manifest `created` timestamp |
+| `--outcome <TAG>` | string | none | Optional canonical anchor (`cmdrvl://...`) embedded as `primary_outcome_tag` |
 | `--no-witness` | flag | `false` | Suppress witness ledger recording |
 
 For reproducible repacks, pass `--created <RFC3339>`. If it is absent, `pack`
 honors `SOURCE_DATE_EPOCH` as Unix seconds; if neither is set, `created` uses
 the current UTC time. The explicit `--created` flag takes precedence over the
 environment.
+If provided, `--outcome` must be a canonical IRI beginning with `cmdrvl://`.
 
 ### verify
 

@@ -26,6 +26,10 @@ pub fn pack_schema() -> Value {
                     "note": {
                         "type": ["string", "null"]
                     },
+                    "primary_outcome_tag": {
+                        "type": ["string", "null"],
+                        "pattern": "^cmdrvl://.+$"
+                    },
                     "tool_version": {
                         "type": "string"
                     },
@@ -154,6 +158,14 @@ mod tests {
         assert!(names.contains(&"tool_version"));
         assert!(names.contains(&"members"));
         assert!(names.contains(&"member_count"));
+    }
+
+    #[test]
+    fn manifest_definition_includes_optional_primary_outcome_tag() {
+        let s = pack_schema();
+        let tag = &s["definitions"]["manifest"]["properties"]["primary_outcome_tag"];
+        assert_eq!(tag["type"], serde_json::json!(["string", "null"]));
+        assert_eq!(tag["pattern"], "^cmdrvl://.+$");
     }
 
     #[test]

@@ -23,6 +23,8 @@ pub struct Manifest {
     pub created: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_outcome_tag: Option<String>,
     pub tool_version: String,
     pub members: Vec<Member>,
     pub member_count: usize,
@@ -33,6 +35,7 @@ impl Manifest {
     pub fn new(
         created: String,
         note: Option<String>,
+        primary_outcome_tag: Option<String>,
         tool_version: String,
         members: Vec<Member>,
     ) -> Self {
@@ -42,6 +45,7 @@ impl Manifest {
             pack_id: String::new(),
             created,
             note,
+            primary_outcome_tag,
             tool_version,
             members,
             member_count,
@@ -145,6 +149,7 @@ mod tests {
         let m = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
             None,
+            None,
             "0.1.0".to_string(),
             sample_members(),
         );
@@ -157,6 +162,7 @@ mod tests {
     fn finalize_sets_pack_id() {
         let mut m = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
+            None,
             None,
             "0.1.0".to_string(),
             sample_members(),
@@ -171,11 +177,13 @@ mod tests {
         let mut m1 = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
             None,
+            None,
             "0.1.0".to_string(),
             sample_members(),
         );
         let mut m2 = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
+            None,
             None,
             "0.1.0".to_string(),
             sample_members(),
@@ -190,6 +198,7 @@ mod tests {
         let mut m = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
             None,
+            None,
             "0.1.0".to_string(),
             sample_members(),
         );
@@ -203,12 +212,35 @@ mod tests {
         let mut m1 = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
             None,
+            None,
             "0.1.0".to_string(),
             sample_members(),
         );
         let mut m2 = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
             Some("hello".to_string()),
+            None,
+            "0.1.0".to_string(),
+            sample_members(),
+        );
+        m1.finalize();
+        m2.finalize();
+        assert_ne!(m1.pack_id, m2.pack_id);
+    }
+
+    #[test]
+    fn pack_id_changes_with_primary_outcome_tag() {
+        let mut m1 = Manifest::new(
+            "2026-01-15T10:30:00Z".to_string(),
+            None,
+            None,
+            "0.1.0".to_string(),
+            sample_members(),
+        );
+        let mut m2 = Manifest::new(
+            "2026-01-15T10:30:00Z".to_string(),
+            None,
+            Some("cmdrvl://catalog/example/canon/entity/outcome/NO_REAL_CHANGE".to_string()),
             "0.1.0".to_string(),
             sample_members(),
         );
@@ -222,11 +254,13 @@ mod tests {
         let mut m1 = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
             None,
+            None,
             "0.1.0".to_string(),
             sample_members(),
         );
         let mut m2 = Manifest::new(
             "2026-01-16T10:30:00Z".to_string(),
+            None,
             None,
             "0.1.0".to_string(),
             sample_members(),
@@ -241,11 +275,13 @@ mod tests {
         let mut m1 = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
             None,
+            None,
             "0.1.0".to_string(),
             sample_members(),
         );
         let mut m2 = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
+            None,
             None,
             "0.2.0".to_string(),
             sample_members(),
@@ -260,6 +296,7 @@ mod tests {
         let mut m1 = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
             None,
+            None,
             "0.1.0".to_string(),
             sample_members(),
         );
@@ -267,6 +304,7 @@ mod tests {
         modified[0].bytes_hash = "sha256:xxxx".to_string();
         let mut m2 = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
+            None,
             None,
             "0.1.0".to_string(),
             modified,
@@ -280,6 +318,7 @@ mod tests {
     fn canonical_json_has_sorted_keys() {
         let m = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
+            None,
             None,
             "0.1.0".to_string(),
             sample_members(),
@@ -304,6 +343,7 @@ mod tests {
     fn to_canonical_bytes_is_stable() {
         let mut m = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
+            None,
             None,
             "0.1.0".to_string(),
             sample_members(),

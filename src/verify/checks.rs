@@ -334,6 +334,7 @@ mod tests {
         let mut manifest = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
             None,
+            None,
             env!("CARGO_PKG_VERSION").to_string(),
             members,
         );

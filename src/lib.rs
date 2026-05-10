@@ -56,11 +56,13 @@ pub fn run() -> u8 {
             output,
             note,
             created,
+            outcome,
         } => match seal::command::execute_seal(
             &artifacts,
             output.as_deref(),
             note.clone(),
             created.as_deref(),
+            outcome.clone(),
         ) {
             Ok(result) => {
                 let output_text = format!(
@@ -79,6 +81,9 @@ pub fn run() -> u8 {
                     }
                     if let Some(note) = &note {
                         params.insert("note".to_string(), Value::String(note.clone()));
+                    }
+                    if let Some(outcome) = &outcome {
+                        params.insert("outcome".to_string(), Value::String(outcome.clone()));
                     }
                     params.insert("created".to_string(), Value::String(result.created.clone()));
                     params.insert(
@@ -116,6 +121,9 @@ pub fn run() -> u8 {
                     }
                     if let Some(created) = &created {
                         params.insert("created".to_string(), Value::String(created.clone()));
+                    }
+                    if let Some(outcome) = &outcome {
+                        params.insert("outcome".to_string(), Value::String(outcome.clone()));
                     }
                     let inputs = artifacts.iter().map(|path| input_from_path(path)).collect();
                     let record = witness::WitnessRecord::new(

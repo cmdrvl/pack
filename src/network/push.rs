@@ -220,6 +220,7 @@ mod tests {
             Some(&pack_dir),
             Some("publish me".to_string()),
             None,
+            None,
         )
         .unwrap();
         (out, pack_dir, result.pack_id)

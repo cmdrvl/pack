@@ -115,6 +115,7 @@ mod tests {
         let mut manifest = Manifest::new(
             "2026-01-15T00:00:00Z".to_string(),
             note.map(|s| s.to_string()),
+            None,
             "0.1.0".to_string(),
             members_vec,
         );

@@ -611,6 +611,7 @@ mod tests {
             Some(&pack_dir),
             Some("archive me".to_string()),
             Some("2026-01-15T10:30:00Z"),
+            None,
         )
         .unwrap();
         (tmp, pack_dir, result.pack_id)

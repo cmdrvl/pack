@@ -28,7 +28,10 @@ pub fn execute_seal(
     output: Option<&Path>,
     note: Option<String>,
     created: Option<&str>,
+    outcome: Option<String>,
 ) -> Result<SealResult, Box<RefusalEnvelope>> {
+    let primary_outcome_tag = validate_outcome_tag(outcome)?;
+
     // 1. Collect
     let candidates = collect_artifacts(artifacts)?;
 
@@ -53,7 +56,13 @@ pub fn execute_seal(
     let copied = copy_and_hash(&candidates, staging_dir.path())?;
 
     // 5. Finalize manifest
-    let manifest = finalize_manifest(&copied, staging_dir.path(), created, note)?;
+    let manifest = finalize_manifest(
+        &copied,
+        staging_dir.path(),
+        created,
+        note,
+        primary_outcome_tag,
+    )?;
 
     // 6. Determine final output path and atomically promote
     let final_dir = match output {
@@ -167,6 +176,30 @@ fn parse_source_date_epoch(value: &str) -> Result<String, Box<RefusalEnvelope>> 
         })
 }
 
+fn validate_outcome_tag(outcome: Option<String>) -> Result<Option<String>, Box<RefusalEnvelope>> {
+    const CANONICAL_PREFIX: &str = "cmdrvl://";
+    let Some(tag) = outcome else {
+        return Ok(None);
+    };
+
+    let trimmed = tag.trim();
+    if trimmed != tag || !tag.starts_with(CANONICAL_PREFIX) || tag.len() <= CANONICAL_PREFIX.len() {
+        return Err(Box::new(RefusalEnvelope::new(
+            RefusalCode::Io,
+            Some(
+                "Invalid --outcome tag: expected canonical IRI starting with cmdrvl://".to_string(),
+            ),
+            Some(json!({
+                "flag": "--outcome",
+                "value": tag,
+                "expected": "cmdrvl://..."
+            })),
+        )));
+    }
+
+    Ok(Some(tag))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,7 +227,7 @@ mod tests {
         let artifacts = create_test_artifacts(&src);
         let output_dir = out.path().join("my_pack");
 
-        let result = execute_seal(&artifacts, Some(&output_dir), None, None).unwrap();
+        let result = execute_seal(&artifacts, Some(&output_dir), None, None, None).unwrap();
 
         assert!(result.pack_id.starts_with("sha256:"));
         assert_eq!(result.member_count, 2);
@@ -210,7 +243,7 @@ mod tests {
         let artifacts = create_test_artifacts(&src);
         let output_dir = out.path().join("pack_out");
 
-        let result = execute_seal(&artifacts, Some(&output_dir), None, None).unwrap();
+        let result = execute_seal(&artifacts, Some(&output_dir), None, None, None).unwrap();
         let manifest_content = fs::read_to_string(result.output_dir.join("manifest.json")).unwrap();
         let manifest: serde_json::Value = serde_json::from_str(&manifest_content).unwrap();
 
@@ -231,6 +264,7 @@ mod tests {
             Some(&output_dir),
             Some("Q4 recon".to_string()),
             None,
+            None,
         )
         .unwrap();
         let manifest_content = fs::read_to_string(result.output_dir.join("manifest.json")).unwrap();
@@ -248,7 +282,7 @@ mod tests {
         fs::create_dir(&output_dir).unwrap();
         fs::write(output_dir.join("existing.txt"), "data").unwrap();
 
-        let err = execute_seal(&artifacts, Some(&output_dir), None, None).unwrap_err();
+        let err = execute_seal(&artifacts, Some(&output_dir), None, None, None).unwrap_err();
         assert_eq!(err.refusal.code, "E_IO");
         assert!(err.refusal.message.contains("non-empty"));
     }
@@ -261,7 +295,7 @@ mod tests {
         let output_dir = out.path().join("empty");
         fs::create_dir(&output_dir).unwrap();
 
-        let result = execute_seal(&artifacts, Some(&output_dir), None, None).unwrap();
+        let result = execute_seal(&artifacts, Some(&output_dir), None, None, None).unwrap();
 
         assert_eq!(result.output_dir, output_dir);
         assert!(result.output_dir.join("manifest.json").exists());
@@ -271,7 +305,7 @@ mod tests {
 
     #[test]
     fn seal_empty_artifacts_refuses() {
-        let err = execute_seal(&[], None, None, None).unwrap_err();
+        let err = execute_seal(&[], None, None, None, None).unwrap_err();
         assert_eq!(err.refusal.code, "E_EMPTY");
     }
 
@@ -285,7 +319,7 @@ mod tests {
         fs::write(&file, content).unwrap();
 
         let output_dir = out.path().join("byte_check");
-        let result = execute_seal(&[file], Some(&output_dir), None, None).unwrap();
+        let result = execute_seal(&[file], Some(&output_dir), None, None, None).unwrap();
 
         let copied = fs::read_to_string(result.output_dir.join("data.lock.json")).unwrap();
         assert_eq!(copied, content);
@@ -321,6 +355,32 @@ mod tests {
         assert_eq!(
             err.refusal.detail.as_ref().unwrap()["env"],
             serde_json::json!("SOURCE_DATE_EPOCH")
+        );
+    }
+
+    #[test]
+    fn outcome_tag_accepts_canonical_cmdrvl_iri() {
+        let parsed = validate_outcome_tag(Some(
+            "cmdrvl://catalog/example/canon/entity/outcome/NO_REAL_CHANGE".to_string(),
+        ))
+        .unwrap();
+        assert_eq!(
+            parsed.as_deref(),
+            Some("cmdrvl://catalog/example/canon/entity/outcome/NO_REAL_CHANGE")
+        );
+    }
+
+    #[test]
+    fn outcome_tag_rejects_non_canonical_values() {
+        let err = validate_outcome_tag(Some("outcome:bdc".to_string())).unwrap_err();
+        assert_eq!(err.refusal.code, "E_IO");
+        assert_eq!(
+            err.refusal.detail.as_ref().unwrap()["flag"],
+            serde_json::json!("--outcome")
+        );
+        assert_eq!(
+            err.refusal.detail.as_ref().unwrap()["expected"],
+            serde_json::json!("cmdrvl://...")
         );
     }
 }

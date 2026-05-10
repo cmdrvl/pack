@@ -402,6 +402,7 @@ mod tests {
             Some(&pack_dir),
             Some("pull me".to_string()),
             None,
+            None,
         )
         .unwrap();
         let manifest: Manifest =

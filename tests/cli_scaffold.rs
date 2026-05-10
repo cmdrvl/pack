@@ -64,10 +64,40 @@ fn describe_matches_checked_in_operator_json() {
 }
 
 #[test]
+fn describe_lists_seal_outcome_option() {
+    let output = pack_cmd().arg("--describe").output().unwrap();
+    assert!(output.status.success());
+    let op: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let seal = op["subcommands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|subcommand| subcommand["name"] == "seal")
+        .unwrap();
+    let has_outcome = seal["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|option| option["flag"] == "--outcome");
+    assert!(has_outcome);
+}
+
+#[test]
 fn schema_short_circuits_before_validation() {
     // --schema should exit 0 even without a subcommand
     let output = pack_cmd().arg("--schema").output().unwrap();
     assert!(output.status.success());
+}
+
+#[test]
+fn schema_includes_primary_outcome_tag() {
+    let output = pack_cmd().arg("--schema").output().unwrap();
+    assert!(output.status.success());
+    let schema: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        schema["definitions"]["manifest"]["properties"]["primary_outcome_tag"]["pattern"],
+        "^cmdrvl://.+$"
+    );
 }
 
 #[test]

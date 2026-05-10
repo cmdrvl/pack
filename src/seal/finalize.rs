@@ -18,6 +18,7 @@ pub fn finalize_manifest(
     staging_dir: &Path,
     created: String,
     note: Option<String>,
+    primary_outcome_tag: Option<String>,
 ) -> Result<Manifest, Box<RefusalEnvelope>> {
     let tool_version = env!("CARGO_PKG_VERSION").to_string();
 
@@ -45,7 +46,7 @@ pub fn finalize_manifest(
         });
     }
 
-    let mut manifest = Manifest::new(created, note, tool_version, members);
+    let mut manifest = Manifest::new(created, note, primary_outcome_tag, tool_version, members);
     manifest.finalize();
 
     // Write manifest.json
@@ -100,6 +101,7 @@ mod tests {
             staging.path(),
             "2026-01-15T10:30:00Z".to_string(),
             None,
+            None,
         )
         .unwrap();
 
@@ -115,6 +117,7 @@ mod tests {
             &copied,
             staging.path(),
             "2026-01-15T10:30:00Z".to_string(),
+            None,
             None,
         )
         .unwrap();
@@ -139,6 +142,7 @@ mod tests {
             staging.path(),
             "2026-01-15T10:30:00Z".to_string(),
             None,
+            None,
         )
         .unwrap();
 
@@ -160,6 +164,7 @@ mod tests {
             staging.path(),
             "2026-01-15T10:30:00Z".to_string(),
             None,
+            None,
         )
         .unwrap();
 
@@ -176,6 +181,7 @@ mod tests {
             staging.path(),
             "2026-01-15T10:30:00Z".to_string(),
             Some("Q4 reconciliation".to_string()),
+            None,
         )
         .unwrap();
 
@@ -190,9 +196,28 @@ mod tests {
             staging.path(),
             "2026-01-15T10:30:00Z".to_string(),
             None,
+            None,
         )
         .unwrap();
 
         assert_eq!(manifest.member_count, manifest.members.len());
+    }
+
+    #[test]
+    fn primary_outcome_tag_included_in_manifest() {
+        let (staging, copied) = setup_staging();
+        let manifest = finalize_manifest(
+            &copied,
+            staging.path(),
+            "2026-01-15T10:30:00Z".to_string(),
+            None,
+            Some("cmdrvl://catalog/example/canon/entity/outcome/NO_REAL_CHANGE".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(
+            manifest.primary_outcome_tag.as_deref(),
+            Some("cmdrvl://catalog/example/canon/entity/outcome/NO_REAL_CHANGE")
+        );
     }
 }

@@ -106,11 +106,12 @@ Commands:
 ### Subcommand details
 
 ```text
-pack seal <ARTIFACT>... [--output <DIR>] [--note <TEXT>] [--created <RFC3339>]
+pack seal <ARTIFACT>... [--output <DIR>] [--note <TEXT>] [--created <RFC3339>] [--outcome <TAG>]
   <ARTIFACT>...          Files/directories to include
   --output <DIR>         Output directory (default: pack/<pack_id>/)
   --note <TEXT>          Optional annotation in manifest
   --created <RFC3339>    Reproducible created timestamp, normalized to UTC
+  --outcome <TAG>        Optional canonical anchor (must begin with cmdrvl://)
 
 pack verify <PACK_DIR> [--json]
 
@@ -464,8 +465,9 @@ itself promises:
   format. Same source pack always yields byte-identical archive bytes, so
   the S3 path (content-addressed by `pack_id`) is idempotent.
 - `pack seal --outcome <tag>` (when present) stamps the outcome anchor into
-  the manifest, so the anchor is content-addressed into `pack_id`. Receipts
-  for outcome-scoped seals are anchored by construction.
+  the manifest, so the anchor is content-addressed into `pack_id`. The tag
+  must be a canonical IRI beginning with `cmdrvl://`. Receipts for
+  outcome-scoped seals are anchored by construction.
 - The `created` timestamp from the manifest is the seal time. The emitter
   records that as `created_at` on the receipt resource and a separate
   `emitted_at` for registration time, mirroring DataBook conventions.
@@ -544,14 +546,18 @@ Discipline:
 
 Concrete example — `benchmark` gold sets:
 
-1. Gold set is sealed via `pack seal --outcome outcome:bdc` → produces a pack
-   with `pack_id` and the outcome tag stamped into the manifest.
+1. Gold set is sealed via
+   `pack seal --outcome cmdrvl://catalog/salt/canon/entity/outcome/bdc` →
+   produces a pack with `pack_id` and the outcome tag stamped into the
+   manifest.
 2. `cmdrvl context pack emit-receipt evidence/<pack_id>/` validates, exports
    the deterministic archive, uploads to
    `s3://cmdrvl-receipt-packs/tenant=salt/receipts/packs/<date>/<pack_id>/pack.tar`,
    and registers `resource://receipt_pack/<pack_id>` with a
-   `pack_serves_canon_entity` link to `outcome:bdc`.
-3. `benchmark` queries catalog for receipt_packs serving `outcome:bdc`,
+   `pack_serves_canon_entity` link to
+   `cmdrvl://catalog/salt/canon/entity/outcome/bdc`.
+3. `benchmark` queries catalog for receipt_packs serving
+   `cmdrvl://catalog/salt/canon/entity/outcome/bdc`,
    selects one by `pack_id`, then runs
    `cmdrvl context pack pull-receipt <pack_id> --out evidence/recovered/` to
    fetch the archive — so downstream `pack verify` works offline against the

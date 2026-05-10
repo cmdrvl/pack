@@ -43,6 +43,10 @@ pub enum Command {
         /// Reproducible manifest creation timestamp (RFC3339, normalized to UTC).
         #[arg(long, value_name = "RFC3339")]
         created: Option<String>,
+
+        /// Optional canonical outcome anchor (must start with cmdrvl://).
+        #[arg(long, value_name = "TAG")]
+        outcome: Option<String>,
     },
 
     /// Verify pack integrity (members + pack_id).
