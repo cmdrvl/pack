@@ -165,7 +165,7 @@ Upstream tools produce individual artifacts (lockfiles, reports). `pack seal` co
 
 **When pack might not be ideal:**
 - You need streaming or compressed archive verification — archive export/import is a portable wrapper, not a streaming integrity mode
-- You need zero-config transport — `push`/`pull` require `PACK_DATA_FABRIC_BASE_URL`
+- You need built-in remote transport — pack does not push or pull. Inside CMD+RVL, receipt registration into the metadata catalog is provided by `cmdrvl context pack emit-receipt` (cmdrvl-cli); pack itself is local-only.
 - You need signed attestation — pack verifies content integrity, not identity (use `gh attestation` for that)
 
 ---
@@ -200,8 +200,6 @@ pack seal <ARTIFACT>... [OPTIONS]
 pack verify <PACK_DIR> [OPTIONS]
 pack inspect <PACK_DIR> [OPTIONS]
 pack diff <A> <B> [OPTIONS]
-pack push <PACK_DIR>
-pack pull <PACK_ID> --out <DIR>
 pack archive export <PACK_DIR> --out <FILE>
 pack archive import <ARCHIVE> --out <DIR>
 pack witness <query|last|count> [OPTIONS]
@@ -274,54 +272,6 @@ pack diff evidence/2025-11/ evidence/2025-12/ --json   # JSON report
 |------|------|---------|-------------|
 | `--json` | flag | `false` | JSON report output |
 
-### push
-
-Publish a validated pack to data-fabric with one idempotent `PUT` keyed by `pack_id`.
-
-```bash
-PACK_DATA_FABRIC_BASE_URL=http://localhost:8080 \
-  pack push evidence/2025-12/
-```
-
-Output:
-
-```text
-PUBLISHED sha256:...
-```
-
-Environment:
-
-| Variable | Description |
-|----------|-------------|
-| `PACK_DATA_FABRIC_BASE_URL` | Base URL for the data-fabric publish endpoint |
-| `PACK_DATA_FABRIC_TIMEOUT_SECS` | Per-attempt connect/read/write timeout, default `30`, allowed `1..3600` |
-| `PACK_DATA_FABRIC_RETRIES` | Retries after the first attempt for idempotent `GET`/`PUT`, default `2`, allowed `0..10` |
-| `PACK_DATA_FABRIC_RETRY_BACKOFF_MS` | Linear retry backoff base in milliseconds, default `100`, allowed `0..60000` |
-
-### pull
-
-Fetch a pack by ID from data-fabric and materialize it under `--out`.
-The output path must be nonexistent or an empty directory; materialization uses
-same-parent staging and atomic promotion.
-
-```bash
-PACK_DATA_FABRIC_BASE_URL=http://localhost:8080 \
-  pack pull sha256:abc... --out recovered/pack
-```
-
-Output:
-
-```text
-FETCHED sha256:...
-recovered/pack
-```
-
-Environment:
-
-| Variable | Description |
-|----------|-------------|
-| `PACK_DATA_FABRIC_BASE_URL` | Base URL for the data-fabric fetch endpoint |
-
 ### archive
 
 Export or import deterministic uncompressed tar wrappers while keeping the pack
@@ -346,9 +296,9 @@ recovered/2025-12/
 ### doctor
 
 Read-only diagnostics for agents and operators. Doctor commands do not seal
-packs, verify integrity, walk pack directories, call data-fabric, import or
-export archives, append witness records, create witness directories, write
-doctor artifacts, rewrite metadata, or use the network.
+packs, verify integrity, walk pack directories, import or export archives,
+append witness records, create witness directories, write doctor artifacts,
+rewrite metadata, or use the network.
 
 ```bash
 pack doctor health
@@ -371,11 +321,11 @@ No fix mode is available. `pack doctor --fix` is intentionally unsupported.
 
 ### Exit Codes
 
-| Code | seal | verify | inspect | diff | push | pull | archive |
-|------|------|--------|---------|------|------|------|---------|
-| `0` | `PACK_CREATED` | `OK` | `METADATA` | `NO_CHANGES` | `PUBLISHED` | `FETCHED` | `ARCHIVE_CREATED` / `ARCHIVE_IMPORTED` |
-| `1` | — | `INVALID` | — | `CHANGES` | — | — | — |
-| `2` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` |
+| Code | seal | verify | inspect | diff | archive |
+|------|------|--------|---------|------|---------|
+| `0` | `PACK_CREATED` | `OK` | `METADATA` | `NO_CHANGES` | `ARCHIVE_CREATED` / `ARCHIVE_IMPORTED` |
+| `1` | — | `INVALID` | — | `CHANGES` | — |
+| `2` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` | `REFUSAL` |
 
 ---
 
@@ -536,7 +486,7 @@ pack verify evidence/2025-12/ --json | jq '.invalid[] | select(.code == "EXTRA_M
 | Limitation | Detail |
 |------------|--------|
 | **Directory-based integrity** | The pack directory remains canonical; archive export/import is only a deterministic transport wrapper |
-| **Requires configured transport** | `push`/`pull` require `PACK_DATA_FABRIC_BASE_URL`; timeout and retry knobs are env-configured |
+| **No built-in remote transport** | Pack is local-only. Inside CMD+RVL, receipt registration into the metadata catalog is provided by `cmdrvl context pack emit-receipt` (cmdrvl-cli) |
 | **No signing** | pack verifies content integrity, not author identity |
 | **No incremental packs** | Each pack is a complete snapshot — no delta packs |
 | **No streaming verify** | Entire pack must be on disk — no remote verification |

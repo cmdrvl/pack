@@ -62,7 +62,9 @@ pack seal nov.lock.json dec.lock.json shape.report.json rvl.report.json verify.r
   --note "Nov→Dec 2025 reconciliation" --output evidence/2025-12/
 ```
 
-Full chain of custody remains local-first; push/pull is optional.
+Full chain of custody remains local-first. Receipt registration into the
+metadata catalog is a separate cmdrvl-cli concern (`cmdrvl context pack
+emit-receipt`) and is not part of the pack binary.
 
 ---
 
@@ -72,8 +74,6 @@ Full chain of custody remains local-first; push/pull is optional.
 
 - `seal`: directory artifact
 - `verify` / `inspect` / `diff`: report output (human default, `--json` optional)
-- `push`: status output (network wrapper)
-- `pull`: status output (network wrapper)
 - `archive`: status output (deterministic file wrapper)
 
 ---
@@ -86,7 +86,12 @@ pack <COMMAND> [OPTIONS]
 
 ### Commands
 
-The list below is the current interface. `seal`, `verify`, `inspect`, `diff`, `push`, `pull`, `archive`, and `witness` are implemented.
+The list below is the current interface. `seal`, `verify`, `inspect`, `diff`,
+`archive`, and `witness` are implemented. Receipt registration and resolution
+are not pack subcommands — they live in cmdrvl-cli as
+`cmdrvl context pack emit-receipt` and `cmdrvl context pack pull-receipt`. The
+pack binary is intentionally Python-free and catalog-free so it stays usable
+for standalone consumers who never touch the CMD+RVL operating environment.
 
 ```text
 Commands:
@@ -94,8 +99,6 @@ Commands:
   verify <PACK_DIR>      Verify pack integrity (members + pack_id)
   inspect <PACK_DIR>     Inspect pack metadata without verifying integrity
   diff <A> <B>           Deterministically diff two packs
-  push <PACK_DIR>        Register receipt_pack in catalog and upload archive
-  pull <PACK_ID>         Resolve receipt_pack from catalog and materialize
   archive <export|import>  Export/import deterministic archive wrappers
   witness <query|last|count>  Query witness ledger
 ```
@@ -115,16 +118,6 @@ pack inspect <PACK_DIR> [--json]
   (metadata only; does not verify hashes, closed-set membership, or pack_id)
 
 pack diff <A> <B> [--json]
-
-pack push <PACK_DIR> [--anchor <ref>]...
-  (registers a receipt_pack in the metadata catalog and uploads the
-   deterministic archive to the catalog-pointed object store; delegates to
-   `cmdrvl context pack emit-receipt`)
-
-pack pull <PACK_ID> --out <DIR>
-  (resolves receipt_pack from the metadata catalog, fetches the archive
-   from the linked object store, materializes by atomic staging + verify;
-   delegates to `cmdrvl context pack pull-receipt`)
 
 pack archive export <PACK_DIR> --out <FILE>
 pack archive import <ARCHIVE> --out <DIR>
@@ -148,8 +141,6 @@ pack witness count [filters] [--json]
 - `pack verify`: `0` OK, `1` INVALID, `2` REFUSAL
 - `pack inspect`: `0` METADATA, `2` REFUSAL
 - `pack diff`: `0` NO_CHANGES, `1` CHANGES, `2` REFUSAL
-- `pack push`: `0` PUBLISHED, `2` REFUSAL
-- `pack pull`: `0` FETCHED, `2` REFUSAL
 - `pack archive`: `0` ARCHIVE_CREATED or ARCHIVE_IMPORTED, `2` REFUSAL
 
 ### Output modes
@@ -160,8 +151,6 @@ pack witness count [filters] [--json]
 | `verify` | Human report | Yes |
 | `inspect` | Human metadata report | Yes |
 | `diff` | Human report | Yes |
-| `push` | Status lines | N/A |
-| `pull` | Status lines | N/A |
 | `archive` | Status lines | N/A |
 | `witness` | Human report | Yes |
 
@@ -414,18 +403,29 @@ Exit semantics:
 
 ---
 
-## `push` / `pull` contract
+## Receipt registration (lives in cmdrvl-cli, not pack)
 
-`push` and `pull` register receipts in the metadata catalog and move bytes
-through a catalog-pointed object store. They are not data-fabric calls — pack
-treats receipts the same way DataBooks treat their payloads: catalog records
-carry IRIs, content hashes, and lineage; the object store carries bytes.
+Receipt registration into the metadata catalog and the catalog-pointed object
+store is **not a pack subcommand**. The pack binary stays self-sufficient,
+Python-free, and catalog-free so external consumers can use seal / verify /
+inspect / diff / archive / witness without any CMD+RVL operating environment.
 
-Both subcommands delegate the catalog and object-store work to
-`cmdrvl context pack emit-receipt` and `cmdrvl context pack pull-receipt`
-respectively. The pack Rust binary stays focused on disk-level integrity and
-the deterministic archive format. Catalog and S3 clients live in cmdrvl-cli
-where they are shared with DataBook emission.
+Inside CMD+RVL, receipt registration is provided by cmdrvl-cli as two
+commands that read a verified pack directory from disk:
+
+- `cmdrvl context pack emit-receipt <PACK_DIR>` — uploads the deterministic
+  archive to S3 and registers `receipt_pack`, `operator_command`, `file`,
+  and three link types in the metadata catalog v2. Mirrors the DataBook
+  emission skeleton in `databook_emitter.py`.
+- `cmdrvl context pack pull-receipt <PACK_ID> --out <DIR>` — resolves the
+  receipt through the catalog, fetches the archive, runs `pack archive
+  import` semantics for atomic staging + verify, and materializes the pack
+  directory.
+
+The on-disk pack directory remains the canonical integrity root. `pack
+verify` is purely offline. The catalog-side records add a deterministic
+transport pointer, lineage to the seal command, and lineage to the canon
+entities the pack serves — but none of that is on pack's critical path.
 
 ### Receipt model
 
@@ -451,87 +451,31 @@ IRIs are derived deterministically from `pack_id`:
 - Seal command IRI: `cmdrvl://catalog/<catalog>/operator/command/<seal_command_id>`
 - Payload URI: `s3://cmdrvl-receipt-packs/tenant=<catalog>/receipts/packs/<YYYY-MM-DD>/<pack_id>/pack.tar`
 
-### `push`
+### Emitter behavior summary
 
-- Preflight: run `verify::run_checks` on the on-disk pack. Refuse with
-  `E_BAD_PACK` on any integrity finding. Pack must be valid before any
-  catalog or S3 write.
-- Contract preflight: pull `resource_type://receipt_pack/1` and the three
-  receipt-pack link types from catalog. Refuse with `DEPENDENCY_MISSING` if
-  any are not `status=active`.
-- Substantive anchor: at least one preexisting catalog node must be referenced
-  before publish. Default candidate is `primary_outcome_tag` stamped into the
-  manifest at seal time via `pack seal --outcome <tag>`. Additional anchors
-  may be supplied at push time via `--anchor <ref>` (repeatable). Each anchor
-  must resolve through metadata to an existing resource. Zero resolved
-  anchors → refusal with `MISSING_ANCHOR`. The seal-time anchor is preferred
-  because it is content-addressed into `pack_id`.
-- Archive export: produce a deterministic uncompressed tar with `manifest.json`
-  as the first entry. Reuse `pack archive export`'s byte-identical output —
-  same source pack always yields the same archive bytes.
-- Object-store upload: PUT the archive to
-  `s3://cmdrvl-receipt-packs/tenant=<catalog>/receipts/packs/<date>/<pack_id>/pack.tar`.
-  Idempotent on `(bucket, key)` because the path is content-addressed by
-  `pack_id`. Use `put_archive_if_absent` semantics (skip upload if the key
-  already exists; verify checksum match if present).
-- Catalog upserts (idempotent stages, mirroring DataBook emission):
-  1. `file_upsert` — `aws_s3://cmdrvl-receipt-packs/<pack_id>.pack.tar` with
-     `file_type=tar`, `category=receipt_pack`, `path` relative-in-bucket,
-     `data_location_key=aws_s3://cmdrvl-receipt-packs`.
-  2. `command_resource_upsert` — `resource://operator_command/<seal_command_id>`.
-  3. `pack_resource_upsert` — `resource://receipt_pack/<pack_id>` with
-     attributes from the manifest (pack_id, payload_uri, payload_sha256,
-     manifest_pack_id, command_hash, created_at, emitted_at, member_count,
-     note, primary_outcome_tag, pipeline).
-  4. `pack_emitted_by_link_ensure` — receipt_pack → operator_command.
-  5. `pack_payload_file_link_ensure` — receipt_pack → file.
-  6. `pack_serves_canon_entity_link_ensure` — receipt_pack → each resolved
-     anchor.
-- Receipt envelope: `cmdrvl.context.receipt.pack.emit.v1` JSON on stdout with
-  `iri`, `pack_id`, `command_iri`, `payload_uri`, `data_location_key`,
-  `file_key`, `payload_sha256`, `manifest_pack_id`, `command_hash`,
-  `primary_outcome_tag`, `substantive_catalog_anchors`. Stages list with
-  `already_present` flags for idempotent replay.
+The full emitter contract — stages, idempotency, anchor resolution, refusal
+codes, environment variables — is documented alongside the catalog seed in
+`cmdrvl-cli/metadata-seeds/salt/receipt-pack-spine/README.md`. What pack
+itself promises:
 
-### `pull`
+- The on-disk pack directory is the only canonical input. Any verified pack
+  can be re-emitted into the catalog from disk; the reverse is not true.
+- The deterministic archive produced by `pack archive export` is the wire
+  format. Same source pack always yields byte-identical archive bytes, so
+  the S3 path (content-addressed by `pack_id`) is idempotent.
+- `pack seal --outcome <tag>` (when present) stamps the outcome anchor into
+  the manifest, so the anchor is content-addressed into `pack_id`. Receipts
+  for outcome-scoped seals are anchored by construction.
+- The `created` timestamp from the manifest is the seal time. The emitter
+  records that as `created_at` on the receipt resource and a separate
+  `emitted_at` for registration time, mirroring DataBook conventions.
 
-- Resolve `resource://receipt_pack/<pack_id>` via metadata. Refuse with
-  `E_BAD_PACK` and `code=NOT_FOUND` if absent.
-- Walk `link_type://pack_payload_file/1` to the `file` entity, then resolve
-  the linked `data_location` to obtain bucket and prefix.
-- Fetch archive bytes from S3. Verify `payload_sha256` against the
-  receipt_pack resource attribute before continuing. Mismatch → refusal.
-- Materialize via `pack archive import` semantics: refuse if `--out` exists
-  and is non-empty; stage under the final output parent with
-  `.pack-pull-receipt-` prefix; extract; run `verify::run_checks` against the
-  staged directory; promote with atomic rename only if checks pass. Failure
-  leaves no final output directory or leaves a pre-existing empty `--out`
-  unchanged.
-- Receipt envelope: same schema as push, with `mode=pull`.
+What pack does not promise:
 
-### Failure mapping
-
-- Catalog unavailable / contract not active → refusal with
-  `DEPENDENCY_MISSING` and the missing key.
-- Substantive anchor unresolved → refusal with `MISSING_ANCHOR` and the list
-  of attempted refs.
-- Object-store I/O failure → refusal with `E_IO` and the operation kind
-  (upload, download, head).
-- Hash mismatch on download → refusal with `E_BAD_PACK` and the expected vs.
-  actual digest.
-- All non-retryable failures emit structured JSON and exit 2.
-
-### Environment
-
-| Variable | Default | Contract |
-|---|---:|---|
-| `CMDRVL_CATALOG` | required | Catalog tenant for receipt registration (e.g., `salt`). May also be supplied via `--catalog` or read from `metadata.default_catalog` in cmdrvl-cli config. |
-| `AWS_PROFILE` | `default` | Resolved by the cmdrvl-cli S3 helper; same convention as DataBook emission. |
-| `CMDRVL_RECEIPT_PACK_BUCKET` | `cmdrvl-receipt-packs` | Override bucket for archive payloads; must match the registered `data_location_key` in catalog. |
-
-Pack does not own its own retry policy; the cmdrvl-cli catalog and S3 clients
-provide retries, timeouts, and backoff with their existing config surface
-(shared with DataBook emission).
+- Pack does not own catalog retries, timeouts, or backoff. Those live in
+  cmdrvl-cli's metadata client and S3 helper, shared with DataBook emission.
+- Pack does not validate anchors. The cmdrvl-cli emitter resolves them
+  through the catalog and refuses if zero anchors resolve.
 
 ---
 
@@ -585,8 +529,8 @@ Discipline:
   product). The catalog is the discovery surface and the lineage record.
 - **Object store carries bytes only.** The archive is a deterministic
   uncompressed tar produced by `pack archive export`. Path is content-
-  addressed by `pack_id`, so push is idempotent on the wire and pulls are
-  hash-checkable against the receipt's `payload_sha256`.
+  addressed by `pack_id`, so emit-receipt is idempotent on the wire and
+  pull-receipt is hash-checkable against the receipt's `payload_sha256`.
 - **Time is first-class.** The manifest's `created` timestamp survives into
   `created_at` on the receipt; `emitted_at` records when the receipt was
   registered; the partition date in the S3 path matches `created_at`.
@@ -602,18 +546,21 @@ Concrete example — `benchmark` gold sets:
 
 1. Gold set is sealed via `pack seal --outcome outcome:bdc` → produces a pack
    with `pack_id` and the outcome tag stamped into the manifest.
-2. `pack push` validates, exports the archive, uploads to
+2. `cmdrvl context pack emit-receipt evidence/<pack_id>/` validates, exports
+   the deterministic archive, uploads to
    `s3://cmdrvl-receipt-packs/tenant=salt/receipts/packs/<date>/<pack_id>/pack.tar`,
    and registers `resource://receipt_pack/<pack_id>` with a
    `pack_serves_canon_entity` link to `outcome:bdc`.
 3. `benchmark` queries catalog for receipt_packs serving `outcome:bdc`,
-   selects one by `pack_id`, then `pack pull`s the archive — so downstream
-   `pack verify` works offline against the run.
+   selects one by `pack_id`, then runs
+   `cmdrvl context pack pull-receipt <pack_id> --out evidence/recovered/` to
+   fetch the archive — so downstream `pack verify` works offline against the
+   run.
 
 Step 1's anchor moves through the manifest into the catalog without operator
 intervention. The receipt is discoverable, content-addressed, and lineage-
 linked from the moment it is published. This is the same pattern as DataBook
-emission: spine tools emit receipts into catalog; consumers resolve through
+emission: cmdrvl-cli emits receipts into catalog; consumers resolve through
 catalog and pull bytes through the linked object store, with the on-disk pack
 remaining canonical for offline verification.
 
@@ -626,7 +573,7 @@ remaining canonical for offline verification.
 | `E_EMPTY` | `seal` called with no artifacts | Provide files/directories to seal |
 | `E_IO` | Cannot read input, write output, or read pack dir | Check paths/permissions |
 | `E_DUPLICATE` | Member path collision during seal | Rename inputs or adjust source layout |
-| `E_BAD_PACK` | Missing/invalid pack payload for verify/diff/push/pull/archive | Recreate pack via `pack seal` or re-fetch |
+| `E_BAD_PACK` | Missing/invalid pack payload for verify/diff/archive | Recreate pack via `pack seal` |
 
 ### Refusal envelope
 
@@ -659,16 +606,17 @@ remaining canonical for offline verification.
 
 Recording policy:
 
-- Record for `seal`, `verify`, `diff`, `push`, and `pull`.
+- Record for `seal`, `verify`, and `diff`.
 - Do not record for `inspect`, `archive`, or `witness` query subcommands.
+- Receipt registration witness records (post-seal emit/pull) are written by
+  cmdrvl-cli and live alongside DataBook emission witness entries; they are
+  not a pack binary concern.
 
 Witness outcome mapping:
 
 - `seal`: `PACK_CREATED` or `REFUSAL`
 - `verify`: `OK`, `INVALID`, or `REFUSAL`
 - `diff`: `NO_CHANGES`, `CHANGES`, or `REFUSAL`
-- `push`: `PUBLISHED` or `REFUSAL`
-- `pull`: `FETCHED` or `REFUSAL`
 
 ---
 
@@ -798,30 +746,6 @@ Future phases:
      b. Compare member sets + hashes
      c. Exit 0/1/2
 
-   push:
-     a. Validate local pack contract (run_checks)
-     b. Verify catalog contract is active (receipt_pack resource type + three link types)
-     c. Resolve substantive anchor(s) — manifest's primary_outcome_tag plus any --anchor refs
-     d. Export deterministic archive (pack archive export)
-     e. Upload archive to s3://cmdrvl-receipt-packs/tenant=<catalog>/.../pack.tar (idempotent on pack_id)
-     f. Upsert file resource (aws_s3 file_key)
-     g. Upsert operator_command resource (seal command)
-     h. Upsert receipt_pack resource (keyed by pack_id)
-     i. Ensure pack_emitted_by, pack_payload_file, and pack_serves_canon_entity links
-     j. Emit cmdrvl.context.receipt.pack.emit.v1 receipt envelope
-     k. Exit 0 or 2
-
-   pull:
-     a. Resolve resource://receipt_pack/<pack_id> via metadata catalog
-     b. Walk pack_payload_file link to file + linked data_location
-     c. Fetch archive bytes from object store
-     d. Verify payload_sha256 against the receipt resource attribute
-     e. Stage + extract via pack archive import semantics
-     f. run_checks against staged directory
-     g. Atomic-rename promote on success
-     h. Emit receipt envelope (mode=pull)
-     i. Exit 0 or 2
-
    archive export:
      a. Read and verify pack directory
      b. Write deterministic uncompressed tar to `--out`
@@ -861,10 +785,6 @@ src/
 ├── diff/
 │   ├── diff.rs
 │   └── mod.rs
-├── network/
-│   ├── push.rs
-│   ├── pull.rs
-│   └── mod.rs
 ├── detect/
 │   ├── member_type.rs
 │   └── mod.rs
@@ -896,7 +816,7 @@ Required highlights:
 - `name: "pack"`
 - `schema_version: "operator.v0"`
 - `output_mode: "mixed"`
-- subcommands: `seal`, `verify`, `inspect`, `diff`, `push`, `pull`, `archive`, `witness`
+- subcommands: `seal`, `verify`, `inspect`, `diff`, `archive`, `witness`
 - refusal map: `E_EMPTY`, `E_IO`, `E_DUPLICATE`, `E_BAD_PACK`
 - exit semantics by subcommand (0/1/2 pattern)
 
@@ -951,7 +871,6 @@ Implemented post-v0.1 test tracks:
 
 - `diff` command behavior
 - `inspect` command behavior
-- `push` / `pull` transport mapping
 - `archive` export/import wrapper behavior
 - large-pack performance report shape and ignored local baseline
 
@@ -978,13 +897,21 @@ Implemented post-v0.1 test tracks:
 ### Current post-v0.1 additions
 
 - `pack diff`
-- `pack push` / `pack pull`
-- witness append for `diff`, `push`, and `pull`
+- witness append for `diff`
 - reproducible `pack seal --created <RFC3339>` and `SOURCE_DATE_EPOCH`
 - ignored large-pack performance baseline (`tests/perf_baseline.rs`)
 - parallel seal/verify hashing controlled by `PACK_THREADS`
 - deterministic `pack archive export` / `pack archive import`
 - witness-to-pack projection design with NTM-session-first future phasing
+
+### Removed (post-v0.1, replaced by cmdrvl-cli)
+
+- `pack push` and `pack pull` (and `src/network/`) — receipt registration and
+  resolution moved to cmdrvl-cli as `cmdrvl context pack emit-receipt` and
+  `cmdrvl context pack pull-receipt`. The pack binary stays self-sufficient
+  for standalone consumers; CMD+RVL agents compose seal + emit-receipt at the
+  operator level. See `cmdrvl-cli/metadata-seeds/salt/receipt-pack-spine/`
+  for the catalog contract.
 
 ---
 
