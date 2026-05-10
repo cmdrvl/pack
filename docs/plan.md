@@ -19,7 +19,7 @@ Without `pack`, evidence is fragmented:
 - There is no single manifest binding them together
 - No content-addressed identifier for the full evidence set
 - No deterministic way to verify a package is intact
-- No clean push/pull boundary for durable storage in data-fabric
+- No clean push/pull boundary for durable, catalog-anchored evidence storage
 
 `pack` replaces that with one deterministic, content-addressed artifact envelope.
 
@@ -94,8 +94,8 @@ Commands:
   verify <PACK_DIR>      Verify pack integrity (members + pack_id)
   inspect <PACK_DIR>     Inspect pack metadata without verifying integrity
   diff <A> <B>           Deterministically diff two packs
-  push <PACK_DIR>        Publish a pack to data-fabric
-  pull <PACK_ID>         Fetch a pack by ID from data-fabric
+  push <PACK_DIR>        Register receipt_pack in catalog and upload archive
+  pull <PACK_ID>         Resolve receipt_pack from catalog and materialize
   archive <export|import>  Export/import deterministic archive wrappers
   witness <query|last|count>  Query witness ledger
 ```
@@ -116,11 +116,15 @@ pack inspect <PACK_DIR> [--json]
 
 pack diff <A> <B> [--json]
 
-pack push <PACK_DIR>
-  (thin data-fabric wrapper; requires PACK_DATA_FABRIC_BASE_URL)
+pack push <PACK_DIR> [--anchor <ref>]...
+  (registers a receipt_pack in the metadata catalog and uploads the
+   deterministic archive to the catalog-pointed object store; delegates to
+   `cmdrvl context pack emit-receipt`)
 
 pack pull <PACK_ID> --out <DIR>
-  (thin data-fabric wrapper; requires PACK_DATA_FABRIC_BASE_URL)
+  (resolves receipt_pack from the metadata catalog, fetches the archive
+   from the linked object store, materializes by atomic staging + verify;
+   delegates to `cmdrvl context pack pull-receipt`)
 
 pack archive export <PACK_DIR> --out <FILE>
 pack archive import <ARCHIVE> --out <DIR>
@@ -412,35 +416,122 @@ Exit semantics:
 
 ## `push` / `pull` contract
 
-Thin wrappers to data-fabric; no new domain logic.
+`push` and `pull` register receipts in the metadata catalog and move bytes
+through a catalog-pointed object store. They are not data-fabric calls — pack
+treats receipts the same way DataBooks treat their payloads: catalog records
+carry IRIs, content hashes, and lineage; the object store carries bytes.
 
-`push`:
+Both subcommands delegate the catalog and object-store work to
+`cmdrvl context pack emit-receipt` and `cmdrvl context pack pull-receipt`
+respectively. The pack Rust binary stays focused on disk-level integrity and
+the deterministic archive format. Catalog and S3 clients live in cmdrvl-cli
+where they are shared with DataBook emission.
 
-- Publish manifest + member metadata under `pack_id`.
-- Idempotent for same `pack_id`.
-- Retry only idempotent transport methods (`PUT` for push, `GET` for pull) on network failures, HTTP 408, HTTP 429, and HTTP 5xx.
-- Refuse without retrying on non-retryable server responses, malformed success responses, and malformed transport configuration.
+### Receipt model
 
-`pull`:
+A *receipt pack* is the catalog-anchored, content-addressed evidence bundle
+that `pack` produces. The on-disk pack directory is still the canonical
+integrity root. `pack verify` remains purely offline. The catalog records add
+a deterministic transport pointer, lineage to the seal command, and lineage to
+the canon entities the pack serves.
 
-- Fetch pack by `pack_id`.
-- Materialize `manifest.json` + members under `--out`.
-- Refuse if `--out` exists and is non-empty.
-- Stage under the final output parent and promote with atomic rename on success; failure leaves no final directory or leaves a pre-existing empty `--out` unchanged.
+Catalog contract (registered separately as
+`metadata-seeds/salt/receipt-pack-spine/`):
 
-Failure mapping:
+- `resource_type://receipt_pack/1` — the pack itself, keyed by `pack_id`.
+- `resource_type://operator_command/2` — reused from the DataBook spine.
+- `link_type://pack_emitted_by/1` — receipt_pack → operator_command.
+- `link_type://pack_payload_file/1` — receipt_pack → file (the archive in S3).
+- `link_type://pack_serves_canon_entity/1` — receipt_pack → canon entity
+  (substantive anchor: outcome, surface, data product, etc.).
 
-- Network / transport / not-found issues → refusal (exit 2).
-- Transport refusal detail includes the failure kind and attempt count.
+IRIs are derived deterministically from `pack_id`:
 
-Environment:
+- Pack IRI: `cmdrvl://catalog/<catalog>/receipt/pack/<pack_id>`
+- Seal command IRI: `cmdrvl://catalog/<catalog>/operator/command/<seal_command_id>`
+- Payload URI: `s3://cmdrvl-receipt-packs/tenant=<catalog>/receipts/packs/<YYYY-MM-DD>/<pack_id>/pack.tar`
+
+### `push`
+
+- Preflight: run `verify::run_checks` on the on-disk pack. Refuse with
+  `E_BAD_PACK` on any integrity finding. Pack must be valid before any
+  catalog or S3 write.
+- Contract preflight: pull `resource_type://receipt_pack/1` and the three
+  receipt-pack link types from catalog. Refuse with `DEPENDENCY_MISSING` if
+  any are not `status=active`.
+- Substantive anchor: at least one preexisting catalog node must be referenced
+  before publish. Default candidate is `primary_outcome_tag` stamped into the
+  manifest at seal time via `pack seal --outcome <tag>`. Additional anchors
+  may be supplied at push time via `--anchor <ref>` (repeatable). Each anchor
+  must resolve through metadata to an existing resource. Zero resolved
+  anchors → refusal with `MISSING_ANCHOR`. The seal-time anchor is preferred
+  because it is content-addressed into `pack_id`.
+- Archive export: produce a deterministic uncompressed tar with `manifest.json`
+  as the first entry. Reuse `pack archive export`'s byte-identical output —
+  same source pack always yields the same archive bytes.
+- Object-store upload: PUT the archive to
+  `s3://cmdrvl-receipt-packs/tenant=<catalog>/receipts/packs/<date>/<pack_id>/pack.tar`.
+  Idempotent on `(bucket, key)` because the path is content-addressed by
+  `pack_id`. Use `put_archive_if_absent` semantics (skip upload if the key
+  already exists; verify checksum match if present).
+- Catalog upserts (idempotent stages, mirroring DataBook emission):
+  1. `file_upsert` — `aws_s3://cmdrvl-receipt-packs/<pack_id>.pack.tar` with
+     `file_type=tar`, `category=receipt_pack`, `path` relative-in-bucket,
+     `data_location_key=aws_s3://cmdrvl-receipt-packs`.
+  2. `command_resource_upsert` — `resource://operator_command/<seal_command_id>`.
+  3. `pack_resource_upsert` — `resource://receipt_pack/<pack_id>` with
+     attributes from the manifest (pack_id, payload_uri, payload_sha256,
+     manifest_pack_id, command_hash, created_at, emitted_at, member_count,
+     note, primary_outcome_tag, pipeline).
+  4. `pack_emitted_by_link_ensure` — receipt_pack → operator_command.
+  5. `pack_payload_file_link_ensure` — receipt_pack → file.
+  6. `pack_serves_canon_entity_link_ensure` — receipt_pack → each resolved
+     anchor.
+- Receipt envelope: `cmdrvl.context.receipt.pack.emit.v1` JSON on stdout with
+  `iri`, `pack_id`, `command_iri`, `payload_uri`, `data_location_key`,
+  `file_key`, `payload_sha256`, `manifest_pack_id`, `command_hash`,
+  `primary_outcome_tag`, `substantive_catalog_anchors`. Stages list with
+  `already_present` flags for idempotent replay.
+
+### `pull`
+
+- Resolve `resource://receipt_pack/<pack_id>` via metadata. Refuse with
+  `E_BAD_PACK` and `code=NOT_FOUND` if absent.
+- Walk `link_type://pack_payload_file/1` to the `file` entity, then resolve
+  the linked `data_location` to obtain bucket and prefix.
+- Fetch archive bytes from S3. Verify `payload_sha256` against the
+  receipt_pack resource attribute before continuing. Mismatch → refusal.
+- Materialize via `pack archive import` semantics: refuse if `--out` exists
+  and is non-empty; stage under the final output parent with
+  `.pack-pull-receipt-` prefix; extract; run `verify::run_checks` against the
+  staged directory; promote with atomic rename only if checks pass. Failure
+  leaves no final output directory or leaves a pre-existing empty `--out`
+  unchanged.
+- Receipt envelope: same schema as push, with `mode=pull`.
+
+### Failure mapping
+
+- Catalog unavailable / contract not active → refusal with
+  `DEPENDENCY_MISSING` and the missing key.
+- Substantive anchor unresolved → refusal with `MISSING_ANCHOR` and the list
+  of attempted refs.
+- Object-store I/O failure → refusal with `E_IO` and the operation kind
+  (upload, download, head).
+- Hash mismatch on download → refusal with `E_BAD_PACK` and the expected vs.
+  actual digest.
+- All non-retryable failures emit structured JSON and exit 2.
+
+### Environment
 
 | Variable | Default | Contract |
 |---|---:|---|
-| `PACK_DATA_FABRIC_BASE_URL` | required | Base URL for `PUT /packs/<pack_id>` and `GET /packs/<pack_id>`. |
-| `PACK_DATA_FABRIC_TIMEOUT_SECS` | `30` | Per-attempt connect/read/write timeout; valid range `1..3600`. |
-| `PACK_DATA_FABRIC_RETRIES` | `2` | Retries after the first attempt for idempotent requests; valid range `0..10`. |
-| `PACK_DATA_FABRIC_RETRY_BACKOFF_MS` | `100` | Linear backoff base between retries; valid range `0..60000`. |
+| `CMDRVL_CATALOG` | required | Catalog tenant for receipt registration (e.g., `salt`). May also be supplied via `--catalog` or read from `metadata.default_catalog` in cmdrvl-cli config. |
+| `AWS_PROFILE` | `default` | Resolved by the cmdrvl-cli S3 helper; same convention as DataBook emission. |
+| `CMDRVL_RECEIPT_PACK_BUCKET` | `cmdrvl-receipt-packs` | Override bucket for archive payloads; must match the registered `data_location_key` in catalog. |
+
+Pack does not own its own retry policy; the cmdrvl-cli catalog and S3 clients
+provide retries, timeouts, and backoff with their existing config surface
+(shared with DataBook emission).
 
 ---
 
@@ -471,53 +562,60 @@ Witness policy:
 
 - `archive` does not append witness records; transport wrapping is intentionally outside the default operation ledger. Use `pack verify` after import when a witness-backed integrity check is required.
 
-### Responsibility split: fabric vs. metadata catalog
+### Responsibility split: disk vs. catalog vs. object store
 
-`pack` push/pull is **fabric-only by contract**. The metadata catalog is an
-**optional sidecar** for discovery and outcome-tagging — it must never be on
-the verification critical path.
+`pack` collapses the persistence story into one model: the metadata catalog is
+authoritative for discovery and lineage; an object store referenced by a
+catalog `data_location` carries bytes. There is no separate data-fabric layer.
 
 | Layer | Responsibility | Required for `pack verify`? |
 |---|---|---|
 | **disk pack** (`manifest.json` + members) | canonical artifact, content-addressed, self-verifying | yes — always |
-| **fabric** (data-fabric storage) | durable bytes + transport for `push` / `pull` | no — only for cross-machine handoff |
-| **catalog** (metadata catalog v2) | optional index: outcome tag, provider, schema, queryable lookup by metadata | no — purely a discovery sidecar |
+| **catalog** (metadata catalog v2) | authoritative receipt registry: receipt_pack resources, file entries, links to commands and canon entities, IRIs | no — pull resolves through catalog, but verify is offline |
+| **object store** (S3 bucket pointed to by `data_location`) | durable archive bytes addressed by `pack_id` | no — only for cross-machine handoff |
 
 Discipline:
 
 - **Disk pack is source of truth.** `pack verify` runs offline against the
-  pack alone. A verifier with no network and no catalog access still
-  produces a correct verdict from `manifest.json` + member hashes.
-- **Fabric carries bytes.** `push` writes the pack to fabric under
-  `pack_id`; `pull` retrieves bytes by `pack_id`. No metadata queries,
-  no outcome lookups — just content-addressed transport.
-- **Catalog carries pointers.** When a pack matters as a discoverable data
-  product (e.g., a gold set for `benchmark`, a sealed evidence pack for
-  an outcome), a catalog entry registers `pack_id` + outcome tag + schema
-  metadata. The catalog never holds the bytes; it points at fabric.
-- **Catalog is the cache, disk is the canon.** Treat catalog entries as
-  index, not authority. If catalog and disk diverge, disk wins.
+  pack alone. A verifier with no network and no catalog access still produces
+  a correct verdict from `manifest.json` + member hashes.
+- **Catalog is the receipt ledger.** `push` registers a `receipt_pack`
+  resource keyed by `pack_id`, links it to the seal command, the archive
+  file, and any substantive canon-entity anchor (outcome, surface, data
+  product). The catalog is the discovery surface and the lineage record.
+- **Object store carries bytes only.** The archive is a deterministic
+  uncompressed tar produced by `pack archive export`. Path is content-
+  addressed by `pack_id`, so push is idempotent on the wire and pulls are
+  hash-checkable against the receipt's `payload_sha256`.
+- **Time is first-class.** The manifest's `created` timestamp survives into
+  `created_at` on the receipt; `emitted_at` records when the receipt was
+  registered; the partition date in the S3 path matches `created_at`.
+- **Substantive anchor required.** A receipt cannot be orphaned. Push refuses
+  with `MISSING_ANCHOR` if no preexisting catalog node is referenced. The
+  seal-time `--outcome <tag>` anchor is preferred because it is content-
+  addressed into `pack_id`.
+- **Catalog is the cache, disk is the canon.** If catalog and disk diverge,
+  disk wins. Catalog records can be re-emitted from a verified disk pack;
+  the reverse is not true.
 
 Concrete example — `benchmark` gold sets:
 
-1. Gold set is sealed via `pack seal` → produces a pack with `pack_id`.
-2. `pack push` writes bytes to fabric under `pack_id`.
-3. (Optional) catalog registration emits a metadata pointer:
-   `{pack_id, outcome_tag: "bdc", kind: "gold_set", version: "v1", schema: ...}`.
-4. `benchmark` looks up gold sets via catalog query
-   ("gold sets for outcome:bdc"), gets a `pack_id`, then `pack pull`s the
-   bytes from fabric and seals them into its own evidence pack — so
-   downstream `pack verify` works offline against the run.
+1. Gold set is sealed via `pack seal --outcome outcome:bdc` → produces a pack
+   with `pack_id` and the outcome tag stamped into the manifest.
+2. `pack push` validates, exports the archive, uploads to
+   `s3://cmdrvl-receipt-packs/tenant=salt/receipts/packs/<date>/<pack_id>/pack.tar`,
+   and registers `resource://receipt_pack/<pack_id>` with a
+   `pack_serves_canon_entity` link to `outcome:bdc`.
+3. `benchmark` queries catalog for receipt_packs serving `outcome:bdc`,
+   selects one by `pack_id`, then `pack pull`s the archive — so downstream
+   `pack verify` works offline against the run.
 
-Without step 3, the system still works — consumers must know `pack_id`
-out of band. Step 3 only adds queryability; it never changes the bytes
-path or verification semantics.
-
-This is the symmetric inverse of DataBook emission: spine tools today
-**emit** into catalog; `pack` (and any consumer of packed artifacts)
-optionally **resolves** through catalog. Both directions keep fabric as
-the bytes layer and catalog as the metadata index, with disk-sealed
-artifacts remaining canonical for offline verification.
+Step 1's anchor moves through the manifest into the catalog without operator
+intervention. The receipt is discoverable, content-addressed, and lineage-
+linked from the moment it is published. This is the same pattern as DataBook
+emission: spine tools emit receipts into catalog; consumers resolve through
+catalog and pull bytes through the linked object store, with the on-disk pack
+remaining canonical for offline verification.
 
 ---
 
@@ -701,14 +799,28 @@ Future phases:
      c. Exit 0/1/2
 
    push:
-     a. Validate local pack contract
-     b. PUT manifest + member payload to data-fabric by `pack_id`
-     c. Exit 0 or 2
+     a. Validate local pack contract (run_checks)
+     b. Verify catalog contract is active (receipt_pack resource type + three link types)
+     c. Resolve substantive anchor(s) — manifest's primary_outcome_tag plus any --anchor refs
+     d. Export deterministic archive (pack archive export)
+     e. Upload archive to s3://cmdrvl-receipt-packs/tenant=<catalog>/.../pack.tar (idempotent on pack_id)
+     f. Upsert file resource (aws_s3 file_key)
+     g. Upsert operator_command resource (seal command)
+     h. Upsert receipt_pack resource (keyed by pack_id)
+     i. Ensure pack_emitted_by, pack_payload_file, and pack_serves_canon_entity links
+     j. Emit cmdrvl.context.receipt.pack.emit.v1 receipt envelope
+     k. Exit 0 or 2
 
    pull:
-     a. Transport call to data-fabric
-     b. Materialize manifest + members under `--out`
-     c. Exit 0 or 2
+     a. Resolve resource://receipt_pack/<pack_id> via metadata catalog
+     b. Walk pack_payload_file link to file + linked data_location
+     c. Fetch archive bytes from object store
+     d. Verify payload_sha256 against the receipt resource attribute
+     e. Stage + extract via pack archive import semantics
+     f. run_checks against staged directory
+     g. Atomic-rename promote on success
+     h. Emit receipt envelope (mode=pull)
+     i. Exit 0 or 2
 
    archive export:
      a. Read and verify pack directory
