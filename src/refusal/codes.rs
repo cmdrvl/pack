@@ -9,7 +9,7 @@ pub enum RefusalCode {
     Io,
     /// Member path collision during seal (including reserved paths).
     Duplicate,
-    /// Missing or invalid `manifest.json` for verify/diff/push.
+    /// Missing or invalid `manifest.json` for verify/diff/archive.
     BadPack,
 }
 

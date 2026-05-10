@@ -192,35 +192,6 @@ const REQUIREMENTS: &[Requirement] = &[
         ],
     },
     Requirement {
-        id: "PCK-NET-001",
-        evidence: &[
-            Evidence {
-                file: "tests/refusal_suite.rs",
-                test: "push_missing_base_url_e_io",
-            },
-            Evidence {
-                file: "tests/refusal_suite.rs",
-                test: "pull_not_found_e_io",
-            },
-            Evidence {
-                file: "src/network/push.rs",
-                test: "invalid_pack_refuses_before_network_publish",
-            },
-            Evidence {
-                file: "src/network/transport.rs",
-                test: "retryable_server_failures_are_retried_for_idempotent_requests",
-            },
-            Evidence {
-                file: "src/network/transport.rs",
-                test: "non_retryable_server_failure_is_not_retried",
-            },
-            Evidence {
-                file: "src/network/transport.rs",
-                test: "successful_non_json_response_is_decode_error",
-            },
-        ],
-    },
-    Requirement {
         id: "PCK-DESC-001",
         evidence: &[
             Evidence {
@@ -286,14 +257,6 @@ const REQUIREMENTS: &[Requirement] = &[
             Evidence {
                 file: "src/seal/command.rs",
                 test: "seal_promotes_into_existing_empty_output_dir",
-            },
-            Evidence {
-                file: "src/network/pull.rs",
-                test: "pull_promotes_into_existing_empty_output_dir",
-            },
-            Evidence {
-                file: "src/network/pull.rs",
-                test: "pull_failure_leaves_existing_empty_output_dir_unchanged",
             },
         ],
     },
@@ -388,9 +351,6 @@ fn source_for(file: &str) -> &'static str {
         "src/diff/command.rs" => include_str!("../src/diff/command.rs"),
         "src/archive.rs" => include_str!("../src/archive.rs"),
         "src/inspect.rs" => include_str!("../src/inspect.rs"),
-        "src/network/pull.rs" => include_str!("../src/network/pull.rs"),
-        "src/network/push.rs" => include_str!("../src/network/push.rs"),
-        "src/network/transport.rs" => include_str!("../src/network/transport.rs"),
         "src/operator.rs" => include_str!("../src/operator.rs"),
         "src/parallel.rs" => include_str!("../src/parallel.rs"),
         "src/refusal/envelope.rs" => include_str!("../src/refusal/envelope.rs"),

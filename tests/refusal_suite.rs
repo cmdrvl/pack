@@ -1,22 +1,7 @@
-use tiny_http::{Header, Response, Server, StatusCode};
-
 use std::process::Command;
 
 fn pack_cmd() -> Command {
     Command::new(env!("CARGO_BIN_EXE_pack"))
-}
-
-fn spawn_server(status: u16, body: &'static str) -> (String, std::thread::JoinHandle<()>) {
-    let server = Server::http("127.0.0.1:0").unwrap();
-    let base_url = format!("http://{}", server.server_addr());
-    let handle = std::thread::spawn(move || {
-        let request = server.recv().unwrap();
-        let response = Response::from_string(body)
-            .with_status_code(StatusCode(status))
-            .with_header(Header::from_bytes("Content-Type", "application/json").unwrap());
-        request.respond(response).unwrap();
-    });
-    (base_url, handle)
 }
 
 /// Parse refusal envelope from pack stdout. Asserts exit code 2 and returns the parsed JSON.
@@ -227,83 +212,6 @@ fn verify_nonexistent_dir_e_bad_pack() {
     let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(report["outcome"], "REFUSAL");
     assert_eq!(report["refusal"]["code"], "E_BAD_PACK");
-}
-
-// ---------------------------------------------------------------------------
-// Push refusals
-// ---------------------------------------------------------------------------
-
-#[test]
-fn push_missing_base_url_e_io() {
-    let output = pack_cmd()
-        .args(["--no-witness", "push", "fixtures/packs/valid"])
-        .output()
-        .unwrap();
-    let envelope = assert_refusal(output);
-    assert_envelope_shape(&envelope, "E_IO");
-    assert!(envelope["refusal"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("PACK_DATA_FABRIC_BASE_URL"));
-}
-
-#[test]
-fn push_invalid_pack_e_bad_pack() {
-    let tmp = tempfile::tempdir().unwrap();
-    let artifact = tmp.path().join("data.json");
-    std::fs::write(&artifact, r#"{"version":"lock.v0","rows":5}"#).unwrap();
-    let pack_dir = tmp.path().join("pack");
-
-    let seal = pack_cmd()
-        .args([
-            "--no-witness",
-            "seal",
-            artifact.to_str().unwrap(),
-            "--output",
-            pack_dir.to_str().unwrap(),
-        ])
-        .output()
-        .unwrap();
-    assert!(seal.status.success());
-
-    std::fs::write(pack_dir.join("data.json"), "tampered").unwrap();
-
-    let output = pack_cmd()
-        .env("PACK_DATA_FABRIC_BASE_URL", "http://127.0.0.1:9")
-        .args(["--no-witness", "push", pack_dir.to_str().unwrap()])
-        .output()
-        .unwrap();
-    let envelope = assert_refusal(output);
-    assert_envelope_shape(&envelope, "E_BAD_PACK");
-    assert!(envelope["refusal"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("failed integrity checks"));
-}
-
-#[test]
-fn pull_not_found_e_io() {
-    let (base_url, handle) = spawn_server(404, r#"{"error":"missing"}"#);
-    let tmp = tempfile::tempdir().unwrap();
-    let out_dir = tmp.path().join("out");
-    let output = pack_cmd()
-        .env("PACK_DATA_FABRIC_BASE_URL", &base_url)
-        .args([
-            "--no-witness",
-            "pull",
-            "sha256:missing",
-            "--out",
-            out_dir.to_str().unwrap(),
-        ])
-        .output()
-        .unwrap();
-    let envelope = assert_refusal(output);
-    assert_envelope_shape(&envelope, "E_IO");
-    assert!(envelope["refusal"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("HTTP 404"));
-    handle.join().unwrap();
 }
 
 // ---------------------------------------------------------------------------

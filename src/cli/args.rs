@@ -82,22 +82,6 @@ pub enum Command {
         json: bool,
     },
 
-    /// Publish a pack to data-fabric.
-    Push {
-        /// Pack directory to publish.
-        pack_dir: PathBuf,
-    },
-
-    /// Fetch a pack by ID from data-fabric.
-    Pull {
-        /// Pack ID to fetch.
-        pack_id: String,
-
-        /// Output directory.
-        #[arg(long = "out")]
-        out_dir: PathBuf,
-    },
-
     /// Export or import deterministic archive wrappers.
     Archive {
         #[command(subcommand)]

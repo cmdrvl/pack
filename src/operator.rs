@@ -42,7 +42,7 @@ mod tests {
     fn operator_manifest_has_all_subcommands() {
         let op = operator_json();
         for name in [
-            "seal", "verify", "inspect", "diff", "push", "pull", "archive", "witness", "doctor",
+            "seal", "verify", "inspect", "diff", "archive", "witness", "doctor",
         ] {
             subcommand(&op, name);
         }
@@ -86,14 +86,6 @@ mod tests {
         assert_eq!(inspect["witness"], "not_recorded");
         assert_eq!(inspect["exit_codes"]["0"]["meaning"], "METADATA");
 
-        let push = subcommand(&op, "push");
-        assert_eq!(push["status"], "implemented");
-        assert_eq!(push["exit_codes"]["0"]["meaning"], "PUBLISHED");
-
-        let pull = subcommand(&op, "pull");
-        assert_eq!(pull["status"], "implemented");
-        assert_eq!(pull["exit_codes"]["0"]["meaning"], "FETCHED");
-
         let archive = subcommand(&op, "archive");
         assert_eq!(archive["status"], "implemented");
         assert_eq!(archive["witness"], "not_recorded");
@@ -117,25 +109,9 @@ mod tests {
     }
 
     #[test]
-    fn operator_manifest_documents_transport_env_knobs() {
+    fn operator_manifest_has_no_transport_env_contract() {
         let op = operator_json();
-        let transport = &op["capabilities"]["transport"];
-
-        assert_eq!(transport["base_url_env"], "PACK_DATA_FABRIC_BASE_URL");
-        assert_eq!(
-            transport["timeout_secs_env"],
-            "PACK_DATA_FABRIC_TIMEOUT_SECS"
-        );
-        assert_eq!(transport["retries_env"], "PACK_DATA_FABRIC_RETRIES");
-        assert_eq!(
-            transport["retry_backoff_ms_env"],
-            "PACK_DATA_FABRIC_RETRY_BACKOFF_MS"
-        );
-        assert_eq!(transport["default_retries"], 2);
-        assert!(transport["retry_methods"]
-            .as_array()
-            .unwrap()
-            .contains(&Value::String("PUT".to_string())));
+        assert!(op["capabilities"].get("transport").is_none());
     }
 
     #[test]

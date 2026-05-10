@@ -141,8 +141,6 @@ fn capabilities_report() -> Value {
             "seals_packs": false,
             "verifies_pack_integrity": false,
             "diffs_pack_dirs": false,
-            "pushes_data_fabric": false,
-            "pulls_data_fabric": false,
             "exports_archives": false,
             "imports_archives": false,
             "writes_witness_ledger": false,
@@ -155,7 +153,7 @@ fn capabilities_report() -> Value {
         "network": {
             "required": false,
             "used": false,
-            "data_fabric_env_read": false
+            "config_env_read": false
         },
         "output_contract": {
             "doctor_stdout": "human text or JSON doctor reports",
@@ -164,7 +162,7 @@ fn capabilities_report() -> Value {
             "verify_stdout": "human text or pack.verify.v0 JSON depending on --json",
             "inspect_stdout": "human text or pack.inspect.v0 JSON depending on --json",
             "diff_stdout": "human text or pack.diff.v0 JSON depending on --json",
-            "push_pull_stdout": "status lines or REFUSAL envelopes"
+            "archive_stdout": "status lines or REFUSAL envelopes"
         },
         "fix_mode": {
             "status": "not_available",
@@ -285,14 +283,12 @@ fn check_artifact_command_contract() -> Value {
     check(
         "artifact_command_contract",
         "ok",
-        "Doctor commands are outside seal, verify, inspect, diff, push, pull, and archive paths.",
+        "Doctor commands are outside seal, verify, inspect, diff, and archive paths.",
         json!({
             "seal": false,
             "verify": false,
             "inspect": false,
             "diff": false,
-            "push": false,
-            "pull": false,
             "archive": false,
             "witness_append": false
         }),
@@ -303,12 +299,10 @@ fn check_transport_contract() -> Value {
     check(
         "transport_contract",
         "ok",
-        "Doctor commands do not read data-fabric environment variables or open network connections.",
+        "Doctor commands do not read network configuration or open network connections.",
         json!({
             "uses_network": false,
-            "reads_pack_data_fabric_base_url": false,
-            "push": false,
-            "pull": false
+            "reads_network_env": false
         }),
     )
 }
@@ -403,7 +397,7 @@ fn robot_docs() -> String {
         "# pack doctor robot docs",
         "",
         "`pack doctor` is a read-only diagnostic surface for agents.",
-        "It does not read pack inputs or members, walk pack directories, seal packs, verify integrity, diff directories, push or pull data-fabric, import or export archives, append witness records, create witness directories, write doctor artifacts, rewrite metadata, or use the network.",
+        "It does not read pack inputs or members, walk pack directories, seal packs, verify integrity, diff directories, import or export archives, append witness records, create witness directories, write doctor artifacts, rewrite metadata, or use the network.",
         "",
         "Commands:",
         "- `pack doctor health` for human health output.",

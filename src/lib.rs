@@ -4,7 +4,6 @@ pub mod detect;
 pub mod diff;
 pub mod doctor;
 pub mod inspect;
-pub mod network;
 pub mod operator;
 mod parallel;
 pub mod refusal;
@@ -198,91 +197,6 @@ pub fn run() -> u8 {
             println!("{output}");
             exit_code
         }
-        Command::Push { pack_dir } => match network::push::execute_push(&pack_dir) {
-            Ok(result) => {
-                let output_text = format!("PUBLISHED {}", result.pack_id);
-                if !no_witness {
-                    let mut params = Map::new();
-                    params.insert("pack_dir".to_string(), path_value(&pack_dir));
-                    params.insert("pack_id".to_string(), Value::String(result.pack_id.clone()));
-                    let record = witness::WitnessRecord::new(
-                        "push",
-                        vec![input_from_path(&pack_dir)],
-                        "PUBLISHED",
-                        0,
-                        params,
-                        &stdout_bytes(&output_text),
-                        Some(result.pack_id.clone()),
-                    );
-                    append_witness_warning(&record);
-                }
-                println!("{output_text}");
-                ExitCode::Success.into()
-            }
-            Err(envelope) => {
-                let output_text = envelope.to_json();
-                if !no_witness {
-                    let mut params = Map::new();
-                    params.insert("pack_dir".to_string(), path_value(&pack_dir));
-                    let record = witness::WitnessRecord::new(
-                        "push",
-                        vec![input_from_path(&pack_dir)],
-                        "REFUSAL",
-                        2,
-                        params,
-                        &stdout_bytes(&output_text),
-                        None,
-                    );
-                    append_witness_warning(&record);
-                }
-                println!("{output_text}");
-                ExitCode::Refusal.into()
-            }
-        },
-        Command::Pull { pack_id, out_dir } => match network::pull::execute_pull(&pack_id, &out_dir)
-        {
-            Ok(result) => {
-                let output_text =
-                    format!("FETCHED {}\n{}", result.pack_id, result.out_dir.display());
-                if !no_witness {
-                    let mut params = Map::new();
-                    params.insert("pack_id".to_string(), Value::String(result.pack_id.clone()));
-                    params.insert("out_dir".to_string(), path_value(&result.out_dir));
-                    let record = witness::WitnessRecord::new(
-                        "pull",
-                        vec![],
-                        "FETCHED",
-                        0,
-                        params,
-                        &stdout_bytes(&output_text),
-                        Some(result.pack_id.clone()),
-                    );
-                    append_witness_warning(&record);
-                }
-                println!("{output_text}");
-                ExitCode::Success.into()
-            }
-            Err(envelope) => {
-                let output_text = envelope.to_json();
-                if !no_witness {
-                    let mut params = Map::new();
-                    params.insert("pack_id".to_string(), Value::String(pack_id.clone()));
-                    params.insert("out_dir".to_string(), path_value(&out_dir));
-                    let record = witness::WitnessRecord::new(
-                        "pull",
-                        vec![],
-                        "REFUSAL",
-                        2,
-                        params,
-                        &stdout_bytes(&output_text),
-                        Some(pack_id.clone()),
-                    );
-                    append_witness_warning(&record);
-                }
-                println!("{output_text}");
-                ExitCode::Refusal.into()
-            }
-        },
         // Archive commands are deterministic transport wrappers and do not append witness records.
         Command::Archive { command } => dispatch_archive(command),
         // Witness query subcommands do NOT record witness.

@@ -10,11 +10,7 @@ fn isolated_pack_cmd(tmp: &tempfile::TempDir) -> Command {
     command
         .env("HOME", tmp.path())
         .env("USERPROFILE", tmp.path())
-        .env("EPISTEMIC_WITNESS", tmp.path().join("witness.jsonl"))
-        .env_remove("PACK_DATA_FABRIC_BASE_URL")
-        .env_remove("PACK_DATA_FABRIC_TIMEOUT_SECS")
-        .env_remove("PACK_DATA_FABRIC_RETRIES")
-        .env_remove("PACK_DATA_FABRIC_RETRY_BACKOFF_MS");
+        .env("EPISTEMIC_WITNESS", tmp.path().join("witness.jsonl"));
     command
 }
 
@@ -53,7 +49,7 @@ fn doctor_capabilities_json_advertises_no_fixers_or_side_effects() {
     assert_eq!(payload["fix_mode"]["status"], "not_available");
     assert_eq!(payload["fixers"].as_array().unwrap().len(), 0);
     assert_eq!(payload["network"]["used"], false);
-    assert_eq!(payload["network"]["data_fabric_env_read"], false);
+    assert_eq!(payload["network"]["config_env_read"], false);
 
     let side_effects = payload["side_effects"].as_object().unwrap();
     assert!(!side_effects.is_empty());
