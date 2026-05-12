@@ -1,5 +1,9 @@
 # pack
 
+![pack: content-addressing as the proof. A painterly dashboard showing five input artifacts entering a brass stamping mechanism labeled PACK SEAL, producing a content-addressed .tar archive named sha256:75757cac…88bf0. Two pack verify lines confirm the archive is identical and would fail on any tampered byte. A bottom strip shows two operators on different machines producing the same hash, captioned the name is the proof.](docs/images/pack.webp)
+
+> *Name a bundle by what's inside it. Prove tampering by hashing it again.*
+
 <div align="center">
 
 [![CI](https://github.com/cmdrvl/pack/actions/workflows/ci.yml/badge.svg)](https://github.com/cmdrvl/pack/actions/workflows/ci.yml)
@@ -698,3 +702,7 @@ fixtures/
 ├── packs/           Pre-built pack fixtures (valid + 4 invalid variants)
 └── schema/          Type detection validation fixtures
 ```
+
+---
+
+*`pack` is part of the open-source toolchain from the [CMD+RVL](https://cmdrvl.com) lineage and AI enablement practice. MIT-licensed. Contributions welcome from any practice or stack.*
