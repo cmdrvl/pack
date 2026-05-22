@@ -2,51 +2,21 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 
+use crate::paths::{witness_path, witness_path_for_append, witness_path_for_query};
+
 use super::record::{canonical_json, WitnessRecord};
 
 /// Determine the witness ledger path.
 ///
 /// Priority:
 /// 1. `EPISTEMIC_WITNESS` env var
-/// 2. `~/.epistemic/witness.jsonl`
+/// 2. `~/.cmdrvl/state/witness/witness.jsonl`
 pub fn witness_ledger_path() -> PathBuf {
-    witness_ledger_path_from_env(|key| std::env::var(key).ok())
+    witness_path()
 }
 
-fn witness_ledger_path_from_env<F>(get_env: F) -> PathBuf
-where
-    F: Fn(&str) -> Option<String>,
-{
-    if let Some(path) = get_env("EPISTEMIC_WITNESS") {
-        if !path.trim().is_empty() {
-            return PathBuf::from(path);
-        }
-    }
-
-    let home = home_from_env(&get_env).unwrap_or_else(|| PathBuf::from("."));
-    home.join(".epistemic").join("witness.jsonl")
-}
-
-fn home_from_env<F>(get_env: &F) -> Option<PathBuf>
-where
-    F: Fn(&str) -> Option<String>,
-{
-    #[cfg(unix)]
-    {
-        get_env("HOME")
-            .filter(|value| !value.trim().is_empty())
-            .map(PathBuf::from)
-    }
-    #[cfg(windows)]
-    {
-        get_env("USERPROFILE")
-            .filter(|value| !value.trim().is_empty())
-            .map(PathBuf::from)
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        None
-    }
+pub(crate) fn witness_ledger_path_for_query() -> Result<PathBuf, String> {
+    witness_path_for_query()
 }
 
 /// Append a witness record to the ledger.
@@ -54,7 +24,7 @@ where
 /// Returns `Ok(())` on success, `Err(message)` on failure.
 /// Witness failures should be warned but must not change domain exit semantics.
 pub fn append_witness(record: &WitnessRecord) -> Result<(), String> {
-    let path = witness_ledger_path();
+    let path = witness_path_for_append()?;
 
     // Ensure parent directory exists.
     if let Some(parent) = path.parent() {
@@ -170,27 +140,5 @@ mod tests {
         assert!(!record.ts.is_empty());
         assert!(record.binary_hash.starts_with("blake3:"));
         assert!(record.output_hash.starts_with("blake3:"));
-    }
-
-    #[test]
-    fn empty_epistemic_witness_falls_back_to_home() {
-        let path = witness_ledger_path_from_env(|key| match key {
-            "EPISTEMIC_WITNESS" => Some(String::new()),
-            "HOME" => Some("/tmp/home".to_string()),
-            _ => None,
-        });
-
-        assert_eq!(path, PathBuf::from("/tmp/home/.epistemic/witness.jsonl"));
-    }
-
-    #[test]
-    fn empty_home_falls_back_to_repo_epistemic_dir() {
-        let path = witness_ledger_path_from_env(|key| match key {
-            "EPISTEMIC_WITNESS" => None,
-            "HOME" => Some(String::new()),
-            _ => None,
-        });
-
-        assert_eq!(path, PathBuf::from(".").join(".epistemic/witness.jsonl"));
     }
 }

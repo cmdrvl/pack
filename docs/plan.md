@@ -108,7 +108,7 @@ Commands:
 ```text
 pack seal <ARTIFACT>... [--output <DIR>] [--note <TEXT>] [--created <RFC3339>] [--outcome <TAG>]
   <ARTIFACT>...          Files/directories to include
-  --output <DIR>         Output directory (default: pack/<pack_id>/)
+  --output <DIR>         Output directory (default: ~/.cmdrvl/state/pack/<pack_id>/)
   --note <TEXT>          Optional annotation in manifest
   --created <RFC3339>    Reproducible created timestamp, normalized to UTC
   --outcome <TAG>        Optional canonical anchor (must begin with cmdrvl://)
@@ -162,13 +162,13 @@ pack witness count [filters] [--json]
 Default output path:
 
 ```text
-pack/<pack_id>/
+~/.cmdrvl/state/pack/<pack_id>/
 ```
 
 Example:
 
 ```text
-pack/sha256:abc.../
+~/.cmdrvl/state/pack/sha256:abc.../
 ├── manifest.json
 ├── nov.lock.json
 ├── dec.lock.json
@@ -187,6 +187,7 @@ Rules:
 - `member_count` equals `len(members)` and equals files listed (excluding `manifest.json`).
 - `seal` refuses if target output directory already exists and is non-empty.
 - `seal` stages under the final output parent and promotes with atomic rename on success; it does not recursively copy into the final directory after promotion failure.
+- When `--output` is absent, first use copies a legacy local `./pack/` directory into `~/.cmdrvl/state/pack/` if the canonical directory does not already exist, and records the migration under `~/.cmdrvl/migrations/` and `~/.cmdrvl/notices/`.
 
 ---
 
@@ -607,7 +608,8 @@ remaining canonical for offline verification.
 
 - Default: append one `witness.v0` record per eligible invocation.
 - Opt-out: `--no-witness`.
-- Path: `EPISTEMIC_WITNESS` or `~/.epistemic/witness.jsonl`.
+- Path: `EPISTEMIC_WITNESS` or `~/.cmdrvl/state/witness/witness.jsonl`.
+- First use without `EPISTEMIC_WITNESS` copies a legacy `~/.epistemic/witness.jsonl` ledger into the canonical path when the canonical file does not already exist, and records the migration under `~/.cmdrvl/migrations/` and `~/.cmdrvl/notices/`.
 - Witness append failure never changes domain exit semantics.
 
 Recording policy:
@@ -723,13 +725,14 @@ Future phases:
      a. Resolve/collect artifacts (files + recursive dirs)
      b. Refuse E_EMPTY if none
      c. Resolve member paths + detect collisions (E_DUPLICATE)
-     d. Prepare same-parent staging dir (refuse if final output exists and non-empty)
-     e. Copy members into staging dir
-     f. Build member metadata + type detection
-     g. Build manifest with pack_id=""
-     h. Canonicalize full manifest + compute SHA256 pack_id
-     i. Write manifest.json and atomically promote staging dir without recursive-copy fallback
-     j. Exit 0
+     d. Resolve default output under ~/.cmdrvl/state/pack when --output is absent, migrating legacy ./pack/ first when needed
+     e. Prepare same-parent staging dir (refuse if final output exists and non-empty)
+     f. Copy members into staging dir
+     g. Build member metadata + type detection
+     h. Build manifest with pack_id=""
+     i. Canonicalize full manifest + compute SHA256 pack_id
+     j. Write manifest.json and atomically promote staging dir without recursive-copy fallback
+     k. Exit 0
 
    verify:
      a. Read manifest.json (E_BAD_PACK/E_IO on failure)

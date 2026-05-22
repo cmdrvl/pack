@@ -6,11 +6,14 @@ use serde_json::Value;
 
 use crate::cli::WitnessFilters;
 
-use super::ledger::witness_ledger_path;
+use super::ledger::witness_ledger_path_for_query;
 use super::record::WitnessRecord;
 
 fn read_ledger() -> Vec<WitnessRecord> {
-    let path = witness_ledger_path();
+    let path = match witness_ledger_path_for_query() {
+        Ok(path) => path,
+        Err(_) => return Vec::new(),
+    };
     let file = match fs::File::open(&path) {
         Ok(file) => file,
         Err(_) => return Vec::new(),
@@ -186,7 +189,7 @@ fn format_record_human(record: &WitnessRecord) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::witness::append_witness;
+    use crate::witness::{append_witness, witness_ledger_path};
     use tempfile::TempDir;
 
     fn setup_ledger() -> TempDir {

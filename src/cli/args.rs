@@ -32,7 +32,7 @@ pub enum Command {
         #[arg(required = true)]
         artifacts: Vec<PathBuf>,
 
-        /// Output directory (default: pack/<pack_id>/).
+        /// Output directory (default: ~/.cmdrvl/state/pack/<pack_id>/).
         #[arg(long)]
         output: Option<PathBuf>,
 

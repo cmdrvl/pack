@@ -41,7 +41,7 @@
       "name": "seal",
       "description": "Standalone sealing interface for artifacts already on disk",
       "options": [
-        { "name": "output", "flag": "--output", "type": "path", "description": "Output directory; defaults to pack/<pack_id>/" },
+        { "name": "output", "flag": "--output", "type": "path", "description": "Output directory; defaults to ~/.cmdrvl/state/pack/<pack_id>/" },
         { "name": "note", "flag": "--note", "type": "string", "description": "Optional annotation embedded in manifest" },
         { "name": "created", "flag": "--created", "type": "RFC3339", "description": "Reproducible manifest creation timestamp; takes precedence over SOURCE_DATE_EPOCH" },
         { "name": "outcome", "flag": "--outcome", "type": "string", "description": "Optional canonical outcome anchor (cmdrvl://...) embedded in manifest and pack_id" }

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
 use serde_json::json;
 
+use crate::paths::pack_state_dir_for_write;
 use crate::refusal::{RefusalCode, RefusalEnvelope};
 use crate::seal::collect::collect_artifacts;
 use crate::seal::collision::check_collisions;
@@ -45,9 +46,17 @@ pub fn execute_seal(
     if let Some(dir) = output {
         ensure_output_available(dir)?;
     }
+    let default_output_parent = if output.is_none() {
+        Some(pack_state_dir_for_write().map_err(path_resolution_refusal)?)
+    } else {
+        None
+    };
     let staging_parent = match output {
         Some(dir) => output_parent(dir),
-        None => PathBuf::from("pack"),
+        None => match default_output_parent.as_ref() {
+            Some(parent) => parent.clone(),
+            None => return Err(path_resolution_refusal(default_output_parent_missing())),
+        },
     };
     ensure_parent_exists(&staging_parent)?;
     let staging_dir = create_staging_dir(&staging_parent, ".pack-seal-")?;
@@ -67,7 +76,10 @@ pub fn execute_seal(
     // 6. Determine final output path and atomically promote
     let final_dir = match output {
         Some(dir) => dir.to_path_buf(),
-        None => PathBuf::from("pack").join(&manifest.pack_id),
+        None => match default_output_parent {
+            Some(parent) => parent.join(&manifest.pack_id),
+            None => return Err(path_resolution_refusal(default_output_parent_missing())),
+        },
     };
 
     promote_staging(staging_dir, &final_dir)?;
@@ -97,6 +109,14 @@ pub struct SealResult {
     pub created: String,
     pub member_count: usize,
     pub witness_inputs: Vec<WitnessInput>,
+}
+
+fn path_resolution_refusal(message: String) -> Box<RefusalEnvelope> {
+    Box::new(RefusalEnvelope::new(RefusalCode::Io, Some(message), None))
+}
+
+fn default_output_parent_missing() -> String {
+    "internal error: default output parent was not resolved".to_string()
 }
 
 fn created_timestamp(cli_created: Option<&str>) -> Result<String, Box<RefusalEnvelope>> {

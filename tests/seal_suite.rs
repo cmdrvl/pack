@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::Command;
 
 fn pack_cmd() -> Command {
@@ -242,6 +243,56 @@ fn seal_stdout_format() {
     assert_eq!(lines.len(), 2);
     assert!(lines[0].starts_with("PACK_CREATED sha256:"));
     assert!(lines[1].contains("pack_out"));
+}
+
+#[test]
+fn seal_without_output_uses_cmdrvl_state_pack_and_migrates_legacy_dir() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let work = tmp.path().join("work");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&work).unwrap();
+
+    let legacy_marker = work.join("pack").join("legacy").join("marker.txt");
+    std::fs::create_dir_all(legacy_marker.parent().unwrap()).unwrap();
+    std::fs::write(&legacy_marker, "legacy").unwrap();
+
+    let artifact =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/artifacts/nov.lock.json");
+
+    let output = pack_cmd()
+        .current_dir(&work)
+        .env("HOME", &home)
+        .env_remove("EPISTEMIC_WITNESS")
+        .args(["seal", artifact.to_str().unwrap(), "--no-witness"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "seal failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.trim().lines().collect();
+    assert_eq!(lines.len(), 2);
+    let pack_id = lines[0].strip_prefix("PACK_CREATED ").unwrap();
+    let expected_dir = home.join(".cmdrvl/state/pack").join(pack_id);
+    assert_eq!(lines[1], expected_dir.display().to_string());
+    assert!(expected_dir.join("manifest.json").exists());
+    assert_eq!(
+        std::fs::read_to_string(home.join(".cmdrvl/state/pack/legacy/marker.txt")).unwrap(),
+        "legacy"
+    );
+
+    let migrations =
+        std::fs::read_to_string(home.join(".cmdrvl/migrations/applied.jsonl")).unwrap();
+    assert!(migrations.contains("\"path_class\":\"pack_default_output_dir\""));
+    assert!(migrations.contains("\"action\":\"copied_legacy_to_canonical\""));
+    let notices =
+        std::fs::read_to_string(home.join(".cmdrvl/notices/deprecated-paths.jsonl")).unwrap();
+    assert!(notices.contains("\"path_class\":\"pack_default_output_dir\""));
 }
 
 /// Seal with --note includes the note in the manifest.

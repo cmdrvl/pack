@@ -145,6 +145,41 @@ fn verify_ok_records_witness() {
         .starts_with("blake3:"));
 }
 
+#[test]
+fn default_witness_path_migrates_legacy_epistemic_ledger() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let legacy = home.join(".epistemic").join("witness.jsonl");
+    std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    std::fs::write(
+        &legacy,
+        "{\"tool\":\"pack\",\"version\":\"0.0.0\",\"outcome\":\"LEGACY\"}\n",
+    )
+    .unwrap();
+
+    let output = pack_cmd()
+        .env("HOME", &home)
+        .env_remove("EPISTEMIC_WITNESS")
+        .args(["verify", "fixtures/packs/valid"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let canonical = home.join(".cmdrvl/state/witness/witness.jsonl");
+    let content = std::fs::read_to_string(&canonical).unwrap();
+    assert!(content.contains("\"outcome\":\"LEGACY\""));
+    assert!(content.contains("\"command\":\"verify\""));
+    assert!(content.contains("\"outcome\":\"OK\""));
+
+    let migrations =
+        std::fs::read_to_string(home.join(".cmdrvl/migrations/applied.jsonl")).unwrap();
+    assert!(migrations.contains("\"path_class\":\"witness_ledger\""));
+    assert!(migrations.contains("\"action\":\"copied_legacy_to_canonical\""));
+    let notices =
+        std::fs::read_to_string(home.join(".cmdrvl/notices/deprecated-paths.jsonl")).unwrap();
+    assert!(notices.contains("\"path_class\":\"witness_ledger\""));
+}
+
 /// Invalid verify records INVALID witness.
 #[test]
 fn verify_invalid_records_witness() {

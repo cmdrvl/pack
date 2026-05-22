@@ -111,7 +111,8 @@ If the user gives a direct instruction, follow it even if it conflicts with defa
 ### 6. Witness parity
 
 Ambient witness semantics must match spine conventions:
-- Append by default to `$EPISTEMIC_WITNESS` or `~/.epistemic/witness.jsonl`.
+- Append by default to `$EPISTEMIC_WITNESS` or `~/.cmdrvl/state/witness/witness.jsonl`.
+- First use without `$EPISTEMIC_WITNESS` copies a legacy `~/.epistemic/witness.jsonl` ledger into the canonical path and records the migration under `~/.cmdrvl/migrations/` and `~/.cmdrvl/notices/`.
 - `--no-witness` opt-out.
 - Witness failures do not mutate domain outcome semantics (non-fatal).
 - Witness query subcommands supported (`query`, `last`, `count`).

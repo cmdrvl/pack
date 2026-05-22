@@ -6,6 +6,7 @@ pub mod doctor;
 pub mod inspect;
 pub mod operator;
 mod parallel;
+mod paths;
 pub mod refusal;
 pub mod schema;
 pub mod seal;

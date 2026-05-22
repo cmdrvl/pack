@@ -224,11 +224,17 @@ pack seal nov.lock.json dec.lock.json rules.json \
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--output <DIR>` | path | auto-generated | Output directory (must be empty or nonexistent) |
+| `--output <DIR>` | path | `~/.cmdrvl/state/pack/<pack_id>/` | Output directory (must be empty or nonexistent) |
 | `--note <TEXT>` | string | none | Human-readable note embedded in manifest |
 | `--created <RFC3339>` | timestamp | current UTC or `SOURCE_DATE_EPOCH` | Reproducible manifest `created` timestamp |
 | `--outcome <TAG>` | string | none | Optional canonical anchor (`cmdrvl://...`) embedded as `primary_outcome_tag` |
 | `--no-witness` | flag | `false` | Suppress witness ledger recording |
+
+Without `--output`, `pack` stages and writes the pack under
+`~/.cmdrvl/state/pack/<pack_id>/`. On first use it copies a legacy local
+`./pack/` output directory into `~/.cmdrvl/state/pack/` when that canonical
+directory does not already exist, and records the migration under
+`~/.cmdrvl/migrations/` and `~/.cmdrvl/notices/`.
 
 For reproducible repacks, pass `--created <RFC3339>`. If it is absent, `pack`
 honors `SOURCE_DATE_EPOCH` as Unix seconds; if neither is set, `created` uses
@@ -630,8 +636,12 @@ pack witness count [--tool TOOL] [--since RFC3339] [--until RFC3339] [--outcome 
 
 ### Ledger Location
 
-- Default: `~/.epistemic/witness.jsonl`
+- Default: `~/.cmdrvl/state/witness/witness.jsonl`
 - Override: set `EPISTEMIC_WITNESS` environment variable
+- First use without an override copies a legacy `~/.epistemic/witness.jsonl`
+  ledger into the canonical location when the canonical file does not already
+  exist, and records the migration under `~/.cmdrvl/migrations/` and
+  `~/.cmdrvl/notices/`.
 - Malformed ledger lines are skipped; valid lines continue to be processed.
 
 ### Planned Projection
