@@ -322,7 +322,7 @@ jobs:
               if os_block != current_os:
                   if current_os is not None:
                       blocks.append("  end")
-                  blocks.append(f"\n  {os_block} do")
+                  blocks.append(f"  {os_block} do")
                   current_os = os_block
               blocks.append(f"    {arch_block} do")
               blocks.append(f'      url "https://github.com/cmdrvl/pack/releases/download/{version}/{asset}"')
