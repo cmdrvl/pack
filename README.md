@@ -207,6 +207,9 @@ pack diff <A> <B> [OPTIONS]
 pack archive export <PACK_DIR> --out <FILE>
 pack archive import <ARCHIVE> --out <DIR>
 pack witness <query|last|count> [OPTIONS]
+pack --robot-triage
+pack capabilities --json
+pack robot-docs guide
 pack doctor <health|capabilities|robot-docs> [OPTIONS]
 pack doctor --robot-triage
 ```
@@ -307,12 +310,15 @@ recovered/2025-12/
 
 ### doctor
 
-Read-only diagnostics for agents and operators. Doctor commands do not seal
-packs, verify integrity, walk pack directories, import or export archives,
-append witness records, create witness directories, write doctor artifacts,
-rewrite metadata, or use the network.
+Read-only diagnostics for agents and operators. Top-level agent discovery
+commands and doctor commands do not seal packs, verify integrity, walk pack
+directories, import or export archives, append witness records, create witness
+directories, write doctor artifacts, rewrite metadata, or use the network.
 
 ```bash
+pack --robot-triage
+pack capabilities --json
+pack robot-docs guide
 pack doctor health
 pack doctor health --json
 pack doctor capabilities --json
@@ -320,7 +326,8 @@ pack doctor robot-docs
 pack doctor --robot-triage
 ```
 
-No fix mode is available. `pack doctor --fix` is intentionally unsupported.
+No fix mode is available. `pack doctor --fix` exits `2`, emits only stderr, and
+names the read-only alternatives.
 
 ### Global Flags
 
@@ -328,6 +335,7 @@ No fix mode is available. `pack doctor --fix` is intentionally unsupported.
 |------|-------------|
 | `--describe` | Print compiled `operator.json` to stdout, exit `0` |
 | `--schema` | Print `pack.v0` JSON schema to stdout, exit `0` |
+| `--robot-triage` | Print read-only machine triage JSON to stdout, exit `0` |
 | `--version` | Print `pack <semver>` to stdout, exit `0` |
 | `--no-witness` | Suppress witness record writes |
 
@@ -593,6 +601,9 @@ esac
 - **Structured JSON only** — `--json` on verify and diff produces machine-readable output
 - **`--describe`** — prints `operator.json` so an agent discovers the tool without reading docs
 - **`--schema`** — prints the pack JSON Schema for programmatic validation
+- **`--robot-triage`** — prints health, capabilities, and recommended actions in one JSON payload
+- **`capabilities --json`** — prints command surfaces, side effects, and fix-mode policy
+- **`robot-docs guide`** — prints an in-tool operating guide for agents
 - **`--no-witness`** — suppresses side effects for isolated CI runs
 
 ---

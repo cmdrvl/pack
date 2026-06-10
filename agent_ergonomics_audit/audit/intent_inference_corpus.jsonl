@@ -1,0 +1,4 @@
+{"intent":"Get one machine-readable health report before using pack in automation.","first_try":"pack --robot-triage","expected":"exit 0 and pack.doctor.triage.v1 JSON"}
+{"intent":"Discover what pack can do without reading README.","first_try":"pack capabilities --json","expected":"exit 0 and pack.doctor.capabilities.v1 JSON"}
+{"intent":"Get agent-oriented usage notes from the binary.","first_try":"pack robot-docs guide","expected":"exit 0 and markdown guide naming core commands"}
+{"intent":"Ask the doctor to fix problems even though no fixer exists.","first_try":"pack doctor --fix","expected":"exit 2, stdout empty, stderr names read-only alternatives"}

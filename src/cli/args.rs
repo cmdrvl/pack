@@ -5,7 +5,8 @@ use std::path::PathBuf;
 #[command(
     name = "pack",
     about = "Seal lockfiles, reports, rules, and registry artifacts into one immutable, self-verifiable evidence pack.",
-    version
+    version,
+    override_usage = "pack [OPTIONS] <COMMAND>\n       pack --robot-triage\n       pack capabilities --json\n       pack robot-docs guide\n       pack seal <ARTIFACT>... [OPTIONS]\n       pack verify <PACK_DIR> [OPTIONS]\n       pack inspect <PACK_DIR> [OPTIONS]\n       pack diff <A> <B> [OPTIONS]\n       pack archive <export|import> ...\n       pack witness <query|last|count> [OPTIONS]\n       pack doctor <health|capabilities|robot-docs> [OPTIONS]"
 )]
 pub struct Cli {
     /// Print compiled operator.json and exit.
@@ -19,6 +20,10 @@ pub struct Cli {
     /// Suppress witness ledger recording.
     #[arg(long, global = true)]
     pub no_witness: bool,
+
+    /// Emit one-call machine triage for headless agents.
+    #[arg(long = "robot-triage")]
+    pub robot_triage: bool,
 
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -94,11 +99,24 @@ pub enum Command {
         command: WitnessCommand,
     },
 
+    /// Print the machine-readable pack capability contract.
+    Capabilities(TopLevelCapabilitiesArgs),
+
+    /// Print paste-ready operating notes for agents.
+    RobotDocs {
+        #[command(subcommand)]
+        action: Option<RobotDocsAction>,
+    },
+
     /// Run read-only diagnostics for agents and operators.
     Doctor {
         /// Emit machine-readable triage JSON for agents.
         #[arg(long = "robot-triage")]
         robot_triage: bool,
+
+        /// Refuse safely; repair mode is not available in this release.
+        #[arg(long, hide = true)]
+        fix: bool,
 
         /// Output health as JSON when no doctor subcommand is provided.
         #[arg(long)]
@@ -107,6 +125,19 @@ pub enum Command {
         #[command(subcommand)]
         action: Option<DoctorAction>,
     },
+}
+
+#[derive(Args, Debug)]
+pub struct TopLevelCapabilitiesArgs {
+    /// Output JSON.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum RobotDocsAction {
+    /// Print the agent operating guide.
+    Guide,
 }
 
 #[derive(Subcommand, Debug)]

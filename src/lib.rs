@@ -43,6 +43,10 @@ pub fn run() -> u8 {
         return ExitCode::Success.into();
     }
 
+    if cli.robot_triage {
+        return doctor::dispatch_robot_triage();
+    }
+
     let Some(command) = cli.command else {
         eprintln!("pack: no command provided. Try --help.");
         return ExitCode::Refusal.into();
@@ -202,12 +206,16 @@ pub fn run() -> u8 {
         Command::Archive { command } => dispatch_archive(command),
         // Witness query subcommands do NOT record witness.
         Command::Witness { command } => dispatch_witness(command),
+        // Top-level agent discovery surfaces are read-only and do NOT record witness.
+        Command::Capabilities(args) => doctor::dispatch_capabilities(args.json),
+        Command::RobotDocs { action } => doctor::dispatch_robot_docs(action.as_ref()),
         // Doctor commands are read-only diagnostics and do NOT record witness.
         Command::Doctor {
             robot_triage,
+            fix,
             json,
             action,
-        } => doctor::dispatch(robot_triage, json, action.as_ref()),
+        } => doctor::dispatch(robot_triage, fix, json, action.as_ref()),
     }
 }
 

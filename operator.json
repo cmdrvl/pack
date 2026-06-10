@@ -17,10 +17,14 @@
       "pack archive export <PACK_DIR> --out <FILE>",
       "pack archive import <ARCHIVE> --out <DIR>",
       "pack witness <query|last|count> [OPTIONS]",
+      "pack --robot-triage",
+      "pack capabilities --json",
+      "pack robot-docs guide",
       "pack doctor health [--json]",
       "pack doctor capabilities --json",
       "pack doctor robot-docs",
-      "pack doctor --robot-triage"
+      "pack doctor --robot-triage",
+      "pack doctor --fix"
     ],
     "output_mode": "mixed",
     "output_schema": "pack.v0",
@@ -33,6 +37,7 @@
     { "name": "no_witness", "flag": "--no-witness", "type": "flag", "description": "Suppress witness ledger recording" },
     { "name": "describe", "flag": "--describe", "type": "flag", "description": "Print compiled operator.json and exit 0" },
     { "name": "schema", "flag": "--schema", "type": "flag", "description": "Print pack.v0 JSON Schema and exit 0" },
+    { "name": "robot_triage", "flag": "--robot-triage", "type": "flag", "description": "Emit read-only machine triage JSON and exit 0" },
     { "name": "version", "flag": "--version", "type": "flag", "description": "Print version and exit 0" }
   ],
 
@@ -99,6 +104,32 @@
       }
     },
     {
+      "name": "capabilities",
+      "description": "Read-only machine-readable agent capability contract",
+      "status": "implemented",
+      "read_only": true,
+      "witness": "not_recorded",
+      "commands": [
+        "pack capabilities --json"
+      ],
+      "exit_codes": {
+        "0": { "meaning": "CAPABILITIES", "domain": "positive" }
+      }
+    },
+    {
+      "name": "robot-docs",
+      "description": "Read-only agent operating guide",
+      "status": "implemented",
+      "read_only": true,
+      "witness": "not_recorded",
+      "commands": [
+        "pack robot-docs guide"
+      ],
+      "exit_codes": {
+        "0": { "meaning": "ROBOT_DOCS", "domain": "positive" }
+      }
+    },
+    {
       "name": "doctor",
       "description": "Read-only diagnostics for agents and operators",
       "status": "implemented",
@@ -110,7 +141,8 @@
         "pack doctor health --json",
         "pack doctor capabilities --json",
         "pack doctor robot-docs",
-        "pack doctor --robot-triage"
+        "pack doctor --robot-triage",
+        "pack doctor --fix"
       ],
       "side_effects": {
         "reads_pack_inputs": false,
@@ -160,6 +192,11 @@
     "doctor": {
       "read_only": true,
       "robot_triage": true,
+      "top_level_surfaces": [
+        "pack --robot-triage",
+        "pack capabilities --json",
+        "pack robot-docs guide"
+      ],
       "fix_mode": "not_available"
     }
   },

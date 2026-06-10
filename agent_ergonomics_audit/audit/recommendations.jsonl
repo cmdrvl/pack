@@ -1,0 +1,5 @@
+{"recommendation_id":"R-001","title":"Add top-level robot triage JSON","surface_id":"S-001","priority":1,"applied":true,"deferred_reason":""}
+{"recommendation_id":"R-002","title":"Add top-level capabilities JSON","surface_id":"S-002","priority":1,"applied":true,"deferred_reason":""}
+{"recommendation_id":"R-003","title":"Add top-level robot docs guide","surface_id":"S-003","priority":2,"applied":true,"deferred_reason":""}
+{"recommendation_id":"R-004","title":"Handle doctor --fix as a safe refusal","surface_id":"S-004","priority":2,"applied":true,"deferred_reason":""}
+{"recommendation_id":"R-005","title":"Add generalized typo recovery for common misspelled flags","surface_id":"CLI","priority":3,"applied":false,"deferred_reason":"Filed as bd-i2l because broad Clap suggestion behavior spans every subcommand and should be designed once with fixture coverage."}

@@ -1,4 +1,4 @@
-use crate::cli::{DoctorAction, ExitCode};
+use crate::cli::{DoctorAction, ExitCode, RobotDocsAction};
 use serde_json::{json, Value};
 use std::path::Path;
 
@@ -8,21 +8,44 @@ const TRIAGE_SCHEMA_VERSION: &str = "pack.doctor.triage.v1";
 const READ_ONLY_DOCTOR_CONTRACT: &str = "cmdrvl.read_only_doctor.v1";
 const OPERATOR_JSON: &str = include_str!("../operator.json");
 
-pub fn dispatch(robot_triage: bool, json_mode: bool, action: Option<&DoctorAction>) -> u8 {
+pub fn dispatch(
+    robot_triage: bool,
+    fix: bool,
+    json_mode: bool,
+    action: Option<&DoctorAction>,
+) -> u8 {
+    if fix {
+        return fix_unavailable();
+    }
+
     if robot_triage {
-        println!("{}", json_string(&triage_report()));
-        return ExitCode::Success.into();
+        return dispatch_robot_triage();
     }
 
     match action {
-        Some(DoctorAction::Health { json }) => print_health(*json),
-        Some(DoctorAction::Capabilities { json }) => print_capabilities(*json),
+        Some(DoctorAction::Health { json }) => print_health(*json || json_mode),
+        Some(DoctorAction::Capabilities { json }) => print_capabilities(*json || json_mode),
         Some(DoctorAction::RobotDocs) => {
-            println!("{}", robot_docs());
+            println!("{}", robot_docs(None));
             ExitCode::Success.into()
         }
         None => print_health(json_mode),
     }
+}
+
+pub fn dispatch_robot_triage() -> u8 {
+    let report = triage_report();
+    println!("{}", json_string(&report));
+    exit_for_report(&report)
+}
+
+pub fn dispatch_capabilities(json_mode: bool) -> u8 {
+    print_capabilities(json_mode)
+}
+
+pub fn dispatch_robot_docs(action: Option<&RobotDocsAction>) -> u8 {
+    println!("{}", robot_docs(action));
+    ExitCode::Success.into()
 }
 
 fn print_health(json_mode: bool) -> u8 {
@@ -102,13 +125,149 @@ fn health_report() -> Value {
 }
 
 fn capabilities_report() -> Value {
+    let agent_surfaces = json!({
+        "seal": {
+            "command": "pack seal <ARTIFACT>... [OPTIONS]",
+            "output": "PACK_CREATED status lines or REFUSAL envelope",
+            "mutates": true,
+            "notes": "Writes a pack directory and may append a witness record unless --no-witness is provided."
+        },
+        "verify": {
+            "command": "pack verify <PACK_DIR> [--json] [--no-witness]",
+            "output": "human text or pack.verify.v0 JSON depending on --json",
+            "mutates": true,
+            "notes": "Reads pack members and may append a witness record unless --no-witness is provided."
+        },
+        "inspect": {
+            "command": "pack inspect <PACK_DIR> [--json]",
+            "output": "human text or pack.inspect.v0 JSON depending on --json",
+            "mutates": false
+        },
+        "diff": {
+            "command": "pack diff <A> <B> [--json] [--no-witness]",
+            "output": "human text or pack.diff.v0 JSON depending on --json",
+            "mutates": true,
+            "notes": "Reads two pack manifests and may append a witness record unless --no-witness is provided."
+        },
+        "archive": {
+            "command": "pack archive <export|import> ...",
+            "output": "ARCHIVE_CREATED or ARCHIVE_IMPORTED status lines, or REFUSAL envelope",
+            "mutates": true,
+            "notes": "Export writes an archive file; import writes a pack directory."
+        },
+        "witness": {
+            "command": "pack witness <query|last|count> [OPTIONS]",
+            "output": "human text or JSON witness query output",
+            "mutates": false
+        },
+        "robot_triage": {
+            "command": "pack --robot-triage",
+            "output": "pack.doctor.triage.v1 JSON diagnostic report",
+            "mutates": false
+        },
+        "capabilities": {
+            "command": "pack capabilities --json",
+            "output": "pack.doctor.capabilities.v1 JSON capability contract",
+            "mutates": false
+        },
+        "robot_docs": {
+            "command": "pack robot-docs guide",
+            "output": "agent-oriented markdown guide",
+            "mutates": false
+        },
+        "doctor_namespace": {
+            "commands": [
+                "pack doctor health",
+                "pack doctor health --json",
+                "pack doctor capabilities --json",
+                "pack doctor robot-docs",
+                "pack doctor --robot-triage",
+                "pack doctor --fix"
+            ],
+            "status": "available"
+        }
+    });
+
+    let side_effects = json!({
+        "reads_pack_inputs": false,
+        "reads_pack_members": false,
+        "walks_pack_dirs": false,
+        "seals_packs": false,
+        "verifies_pack_integrity": false,
+        "diffs_pack_dirs": false,
+        "exports_archives": false,
+        "imports_archives": false,
+        "writes_witness_ledger": false,
+        "creates_witness_directory": false,
+        "writes_doctor_artifacts": false,
+        "rewrites_operator_manifest": false,
+        "rewrites_schema": false,
+        "uses_network": false,
+        "by_command": {
+            "pack --robot-triage": read_only_discovery_side_effects(),
+            "pack capabilities --json": read_only_discovery_side_effects(),
+            "pack robot-docs guide": read_only_discovery_side_effects(),
+            "pack doctor --fix": {
+                "available": false,
+                "reads_pack_inputs": false,
+                "reads_pack_members": false,
+                "walks_pack_dirs": false,
+                "seals_packs": false,
+                "verifies_pack_integrity": false,
+                "diffs_pack_dirs": false,
+                "exports_archives": false,
+                "imports_archives": false,
+                "writes_witness_ledger": false,
+                "creates_witness_directory": false,
+                "writes_doctor_artifacts": false,
+                "uses_network": false
+            }
+        }
+    });
+
     json!({
         "schema_version": CAPABILITIES_SCHEMA_VERSION,
         "contract": READ_ONLY_DOCTOR_CONTRACT,
         "tool": "pack",
         "version": env!("CARGO_PKG_VERSION"),
         "read_only": true,
+        "online_default": false,
+        "agent_surfaces": agent_surfaces,
+        "pack_capabilities": {
+            "formats": ["json", "directory"],
+            "artifact_tool": true,
+            "content_addressed_pack_id": true,
+            "closed_set_verification": true,
+            "schema_validation": true,
+            "pack_diff": true,
+            "archive_export_import": true,
+            "operator_describe": true,
+            "schema_describe": true,
+            "witness_query": true,
+            "streaming": false,
+            "transport": false
+        },
         "commands": [
+            {
+                "command": "pack --robot-triage",
+                "description": "Emit health and capabilities in one robot-readable report."
+            },
+            {
+                "command": "pack capabilities --json",
+                "description": "Describe agent-facing command surfaces and mutation policy."
+            },
+            {
+                "command": "pack robot-docs guide",
+                "description": "Print agent-oriented usage notes."
+            },
+            {
+                "command": "pack seal <ARTIFACT>... [OPTIONS]",
+                "description": "Seal artifacts into an immutable evidence pack directory."
+            },
+            {
+                "command": "pack verify <PACK_DIR> --json",
+                "description": "Verify pack integrity and schema validation."
+            },
             {
                 "command": "pack doctor health",
                 "json": "pack doctor health --json",
@@ -125,6 +284,10 @@ fn capabilities_report() -> Value {
             {
                 "command": "pack doctor --robot-triage",
                 "description": "Emit health and capabilities in one robot-readable report."
+            },
+            {
+                "command": "pack doctor --fix",
+                "description": "Refuse safely; fix mode is not available in this release."
             }
         ],
         "detectors": [
@@ -134,22 +297,7 @@ fn capabilities_report() -> Value {
             {"name": "artifact_command_contract", "mode": "static_contract", "mutates": false},
             {"name": "transport_contract", "mode": "static_contract", "mutates": false}
         ],
-        "side_effects": {
-            "reads_pack_inputs": false,
-            "reads_pack_members": false,
-            "walks_pack_dirs": false,
-            "seals_packs": false,
-            "verifies_pack_integrity": false,
-            "diffs_pack_dirs": false,
-            "exports_archives": false,
-            "imports_archives": false,
-            "writes_witness_ledger": false,
-            "creates_witness_directory": false,
-            "writes_doctor_artifacts": false,
-            "rewrites_operator_manifest": false,
-            "rewrites_schema": false,
-            "uses_network": false
-        },
+        "side_effects": side_effects,
         "network": {
             "required": false,
             "used": false,
@@ -165,11 +313,30 @@ fn capabilities_report() -> Value {
             "archive_stdout": "status lines or REFUSAL envelopes"
         },
         "fix_mode": {
+            "available": false,
             "status": "not_available",
-            "command": null,
+            "command": "pack doctor --fix",
+            "behavior": "exits 2, emits only stderr, and names read-only alternatives",
             "reason": "No pack fixer has detector, backup, inverse, and fixture coverage yet."
         },
         "fixers": []
+    })
+}
+
+fn read_only_discovery_side_effects() -> Value {
+    json!({
+        "reads_pack_inputs": false,
+        "reads_pack_members": false,
+        "walks_pack_dirs": false,
+        "seals_packs": false,
+        "verifies_pack_integrity": false,
+        "diffs_pack_dirs": false,
+        "exports_archives": false,
+        "imports_archives": false,
+        "writes_witness_ledger": false,
+        "creates_witness_directory": false,
+        "writes_doctor_artifacts": false,
+        "uses_network": false
     })
 }
 
@@ -392,23 +559,57 @@ fn human_capabilities(report: &Value) -> String {
     format!("pack doctor capabilities: read_only={read_only} fix_mode={fix_status}")
 }
 
-fn robot_docs() -> String {
+fn robot_docs(action: Option<&RobotDocsAction>) -> String {
+    match action {
+        Some(RobotDocsAction::Guide) | None => {}
+    }
+
     [
-        "# pack doctor robot docs",
+        "# pack robot-docs guide",
         "",
-        "`pack doctor` is a read-only diagnostic surface for agents.",
-        "It does not read pack inputs or members, walk pack directories, seal packs, verify integrity, diff directories, import or export archives, append witness records, create witness directories, write doctor artifacts, rewrite metadata, or use the network.",
+        "`pack` exposes read-only discovery surfaces for agents.",
+        "`pack --robot-triage`, `pack capabilities --json`, `pack robot-docs guide`, and `pack doctor` do not read pack inputs or members, walk pack directories, seal packs, verify integrity, diff directories, import or export archives, append witness records, create witness directories, write doctor artifacts, rewrite metadata, or use the network.",
         "",
         "Commands:",
+        "- `pack --robot-triage` for a single JSON triage payload.",
+        "- `pack capabilities --json` for command and side-effect policy.",
+        "- `pack robot-docs guide` for this agent-oriented guide.",
+        "- `pack seal <ARTIFACT>... [OPTIONS]` to seal artifacts into an evidence pack.",
+        "- `pack verify <PACK_DIR> --json` to verify pack integrity.",
+        "- `pack inspect <PACK_DIR> --json` to read metadata without verifying integrity.",
+        "- `pack diff <A> <B> --json` to compare two packs.",
         "- `pack doctor health` for human health output.",
         "- `pack doctor health --json` for machine-readable health.",
         "- `pack doctor capabilities --json` for command and side-effect policy.",
         "- `pack doctor --robot-triage` for a single JSON triage payload.",
         "",
-        "No fix mode is available. `pack doctor --fix` is intentionally unsupported.",
+        "Repair policy: `pack doctor --fix` is unavailable and exits 2 without stdout. Use `pack --robot-triage`, `pack capabilities --json`, or `pack robot-docs guide` for read-only diagnostics.",
         "Use `pack verify` when you need to verify pack integrity; doctor does not verify pack contents.",
     ]
     .join("\n")
+}
+
+fn fix_unavailable() -> u8 {
+    use std::io::Write;
+
+    let mut stderr = std::io::stderr();
+    let _ = writeln!(
+        stderr,
+        "pack doctor --fix is unavailable: diagnostics are read-only in this release."
+    );
+    let _ = writeln!(stderr, "Try --robot-triage: pack --robot-triage");
+    let _ = writeln!(stderr, "Try capabilities --json: pack capabilities --json");
+    let _ = writeln!(stderr, "Try robot-docs guide: pack robot-docs guide");
+    let _ = stderr.flush();
+    ExitCode::Refusal.into()
+}
+
+fn exit_for_report(report: &Value) -> u8 {
+    if report.get("ok").and_then(Value::as_bool).unwrap_or(false) {
+        ExitCode::Success.into()
+    } else {
+        ExitCode::Refusal.into()
+    }
 }
 
 fn json_string(value: &Value) -> String {

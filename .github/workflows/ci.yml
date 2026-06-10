@@ -115,6 +115,9 @@ jobs:
         run: ./target/release/pack --schema
       - name: Smoke - doctor surface
         run: |
+          ./target/release/pack --robot-triage
+          ./target/release/pack capabilities --json
+          ./target/release/pack robot-docs guide
           ./target/release/pack doctor health
           ./target/release/pack doctor capabilities --json
           ./target/release/pack doctor robot-docs

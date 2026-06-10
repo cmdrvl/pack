@@ -1,0 +1,4 @@
+{"surface_id":"S-001","command":"pack --robot-triage","kind":"global_flag","status":"added","notes":"One-call machine triage for headless agents."}
+{"surface_id":"S-002","command":"pack capabilities --json","kind":"subcommand","status":"added","notes":"Machine-readable capability and side-effect contract."}
+{"surface_id":"S-003","command":"pack robot-docs guide","kind":"subcommand","status":"added","notes":"In-tool agent operating guide."}
+{"surface_id":"S-004","command":"pack doctor --fix","kind":"safe_refusal","status":"added","notes":"Hidden safe refusal with exact read-only alternatives."}

@@ -60,9 +60,24 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Verify Cargo.lock is synchronized
+        run: cargo check --locked --all-targets
+
+      - name: Enforce formatting
+        run: cargo fmt --check
+
+      - name: Enforce clippy warnings as errors
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run tests
+        run: cargo test -- --test-threads=1
+
       - name: Smoke doctor surface
         shell: bash
         run: |
+          cargo run --locked -- --robot-triage
+          cargo run --locked -- capabilities --json
+          cargo run --locked -- robot-docs guide
           cargo run --locked -- doctor health
           cargo run --locked -- doctor capabilities --json
           cargo run --locked -- doctor robot-docs
@@ -301,7 +316,9 @@ jobs:
           current_os = None
           for target, (os_block, arch_block) in targets.items():
               asset = f"pack-{bare}-{target}.tar.gz"
-              sha = sums.get(asset, "MISSING")
+              sha = sums.get(asset)
+              if sha is None:
+                  raise SystemExit(f"missing checksum for {asset}")
               if os_block != current_os:
                   if current_os is not None:
                       blocks.append("  end")
@@ -320,7 +337,6 @@ jobs:
           class Pack < Formula
             desc "Seal artifacts into immutable, self-verifiable evidence packs"
             homepage "https://github.com/cmdrvl/pack"
-            version "{bare}"
             license "MIT"
           {"".join(chr(10) + l for l in blocks)}
 

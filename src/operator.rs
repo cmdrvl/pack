@@ -42,7 +42,15 @@ mod tests {
     fn operator_manifest_has_all_subcommands() {
         let op = operator_json();
         for name in [
-            "seal", "verify", "inspect", "diff", "archive", "witness", "doctor",
+            "seal",
+            "verify",
+            "inspect",
+            "diff",
+            "archive",
+            "witness",
+            "capabilities",
+            "robot-docs",
+            "doctor",
         ] {
             subcommand(&op, name);
         }
@@ -99,6 +107,14 @@ mod tests {
         assert_eq!(doctor["read_only"], true);
         assert_eq!(doctor["witness"], "not_recorded");
         assert_eq!(doctor["fix_mode"], "not_available");
+
+        let capabilities = subcommand(&op, "capabilities");
+        assert_eq!(capabilities["read_only"], true);
+        assert_eq!(capabilities["commands"][0], "pack capabilities --json");
+
+        let robot_docs = subcommand(&op, "robot-docs");
+        assert_eq!(robot_docs["read_only"], true);
+        assert_eq!(robot_docs["commands"][0], "pack robot-docs guide");
     }
 
     #[test]

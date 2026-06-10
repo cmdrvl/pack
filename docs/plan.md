@@ -75,6 +75,7 @@ emit-receipt`) and is not part of the pack binary.
 - `seal`: directory artifact
 - `verify` / `inspect` / `diff`: report output (human default, `--json` optional)
 - `archive`: status output (deterministic file wrapper)
+- `--robot-triage` / `capabilities --json` / `robot-docs guide`: read-only agent discovery surfaces
 
 ---
 
@@ -101,6 +102,9 @@ Commands:
   diff <A> <B>           Deterministically diff two packs
   archive <export|import>  Export/import deterministic archive wrappers
   witness <query|last|count>  Query witness ledger
+  capabilities --json    Emit the read-only capability contract
+  robot-docs guide       Emit the agent operating guide
+  doctor <health|capabilities|robot-docs>  Run read-only diagnostics
 ```
 
 ### Subcommand details
@@ -127,12 +131,25 @@ pack archive import <ARCHIVE> --out <DIR>
 pack witness query [filters] [--json]
 pack witness last [--json]
 pack witness count [filters] [--json]
+
+pack --robot-triage
+  (read-only pack.doctor.triage.v1 JSON; does not read packs or write witness)
+
+pack capabilities --json
+  (read-only pack.doctor.capabilities.v1 JSON with command side effects)
+
+pack robot-docs guide
+  (read-only agent-oriented operating notes)
+
+pack doctor --fix
+  (safe refusal: exits 2, stdout empty, stderr names read-only alternatives)
 ```
 
 ### Common flags (all subcommands)
 
 - `--describe`: Print `operator.json` to stdout and exit 0 (checked before input validation).
 - `--schema`: Print JSON Schema for `pack.v0` and exit 0 (checked before input validation).
+- `--robot-triage`: Print read-only machine triage JSON and exit 0 (checked before subcommand validation).
 - `--version`: Print `pack <semver>` and exit 0.
 - `--no-witness`: Suppress witness ledger recording.
 
@@ -143,6 +160,10 @@ pack witness count [filters] [--json]
 - `pack inspect`: `0` METADATA, `2` REFUSAL
 - `pack diff`: `0` NO_CHANGES, `1` CHANGES, `2` REFUSAL
 - `pack archive`: `0` ARCHIVE_CREATED or ARCHIVE_IMPORTED, `2` REFUSAL
+- `pack --robot-triage`: `0` DOCTOR_OK, `2` DOCTOR_ERROR
+- `pack capabilities --json`: `0` CAPABILITIES
+- `pack robot-docs guide`: `0` ROBOT_DOCS
+- `pack doctor --fix`: `2` CLI_USAGE
 
 ### Output modes
 
@@ -154,6 +175,9 @@ pack witness count [filters] [--json]
 | `diff` | Human report | Yes |
 | `archive` | Status lines | N/A |
 | `witness` | Human report | Yes |
+| `--robot-triage` | JSON triage report | Always JSON |
+| `capabilities` | Human summary or JSON contract | Yes |
+| `robot-docs` | Markdown guide | N/A |
 
 ---
 

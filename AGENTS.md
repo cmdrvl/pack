@@ -21,6 +21,9 @@ vacuum → hashbytes → fingerprint → lock → pack
 pack seal nov.lock.json dec.lock.json rules.json --output evidence/2025-12/
 pack verify evidence/2025-12/
 pack diff evidence/2025-11/ evidence/2025-12/
+pack --robot-triage
+pack capabilities --json
+pack robot-docs guide
 
 # Quality gate
 cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test -- --test-threads=1
@@ -46,6 +49,7 @@ Note: `--test-threads=1` is required because witness tests manipulate the `EPIST
 | `src/detect/` | Member type detection from content |
 | `src/refusal/` | Refusal codes and envelope |
 | `src/witness/` | Witness ledger append/query |
+| `src/doctor.rs` | Read-only agent diagnostics and capability reports |
 | `src/operator.rs` | `--describe` output |
 | `src/schema.rs` | `--schema` output |
 
@@ -71,6 +75,8 @@ If the user gives a direct instruction, follow it even if it conflicts with defa
 - `verify` outputs human or `--json` report.
 - `diff` outputs human or `--json` report.
 - `--describe` and `--schema` short-circuit before normal input validation.
+- `--robot-triage`, `capabilities --json`, and `robot-docs guide` are read-only agent discovery surfaces.
+- `doctor --fix` is a safe refusal: exit `2`, stdout empty, stderr names read-only alternatives.
 
 ---
 

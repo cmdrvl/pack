@@ -23,6 +23,9 @@ fn help_flag_exits_0() {
     assert!(stdout.contains("inspect"));
     assert!(stdout.contains("archive"));
     assert!(stdout.contains("witness"));
+    assert!(stdout.contains("capabilities"));
+    assert!(stdout.contains("robot-docs"));
+    assert!(stdout.contains("--robot-triage"));
 }
 
 #[test]
