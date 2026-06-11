@@ -247,6 +247,31 @@ fn capabilities_report() -> Value {
             "streaming": false,
             "transport": false
         },
+        "composition": {
+            "family": {
+                "name": "cmdrvl-spine",
+                "siblings": [
+                    {"tool": "vacuum", "capabilities": "vacuum capabilities --json"},
+                    {"tool": "hashbytes", "capabilities": "hashbytes capabilities --json"},
+                    {"tool": "fingerprint", "capabilities": "fingerprint capabilities --json"},
+                    {"tool": "lock", "capabilities": "lock capabilities --json"},
+                    {"tool": "pack", "capabilities": "pack capabilities --json"}
+                ]
+            },
+            "role": "final evidence boundary; seal lockfiles and reports into an immutable content-addressed pack",
+            "position": 5,
+            "accepts": ["lock.v0 JSON", "shape reports", "rvl reports", "verify reports", "assess reports", "arbitrary evidence artifacts"],
+            "produces": ["pack.v0 directory"],
+            "canonical_chain": [
+                "vacuum --json <ROOT>... | hashbytes | fingerprint --fp <ID> | lock --dataset-id <DATASET> > dataset.lock.json",
+                "pack seal dataset.lock.json shape.report.json rvl.report.json --output evidence/<DATASET>/"
+            ],
+            "agent_rules": [
+                "Use pack seal after upstream tools have produced artifacts to preserve.",
+                "Use pack verify --json before trusting a received pack.",
+                "Use lock upstream when you still need to create a dataset lockfile."
+            ]
+        },
         "commands": [
             {
                 "command": "pack --robot-triage",
@@ -582,6 +607,11 @@ fn robot_docs(action: Option<&RobotDocsAction>) -> String {
         "- `pack doctor health --json` for machine-readable health.",
         "- `pack doctor capabilities --json` for command and side-effect policy.",
         "- `pack doctor --robot-triage` for a single JSON triage payload.",
+        "",
+        "Composition:",
+        "- Canonical chain: `vacuum --json <ROOT>... | hashbytes | fingerprint --fp <ID> | lock --dataset-id <DATASET> > dataset.lock.json`.",
+        "- Final seal: `pack seal dataset.lock.json shape.report.json rvl.report.json --output evidence/<DATASET>/`.",
+        "- Use `pack verify evidence/<DATASET>/ --json` before trusting a received pack.",
         "",
         "Repair policy: `pack doctor --fix` is unavailable and exits 2 without stdout. Use `pack --robot-triage`, `pack capabilities --json`, or `pack robot-docs guide` for read-only diagnostics.",
         "Use `pack verify` when you need to verify pack integrity; doctor does not verify pack contents.",
