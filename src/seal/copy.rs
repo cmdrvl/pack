@@ -118,10 +118,7 @@ fn collect_ordered_copy_results(
     let mut copied = Vec::with_capacity(results.len());
 
     for result in results.drain(..) {
-        match result.expect("copy worker did not fill result") {
-            Ok(member) => copied.push(member),
-            Err(envelope) => return Err(envelope),
-        }
+        copied.push(result.expect("copy worker did not fill result")?);
     }
 
     Ok(copied)

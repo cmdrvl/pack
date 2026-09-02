@@ -13,6 +13,12 @@ pub struct Member {
     pub member_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub artifact_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub profile_frozen: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub profile_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub column_registry_hash: Option<String>,
 }
 
 /// The pack.v0 manifest.
@@ -134,12 +140,18 @@ mod tests {
                 bytes_hash: "sha256:aaaa".to_string(),
                 member_type: "report".to_string(),
                 artifact_version: Some("rvl.v0".to_string()),
+                profile_frozen: None,
+                profile_sha256: None,
+                column_registry_hash: None,
             },
             Member {
                 path: "b.lock.json".to_string(),
                 bytes_hash: "sha256:bbbb".to_string(),
                 member_type: "lockfile".to_string(),
                 artifact_version: Some("lock.v0".to_string()),
+                profile_frozen: None,
+                profile_sha256: None,
+                column_registry_hash: None,
             },
         ]
     }
@@ -302,6 +314,35 @@ mod tests {
         );
         let mut modified = sample_members();
         modified[0].bytes_hash = "sha256:xxxx".to_string();
+        let mut m2 = Manifest::new(
+            "2026-01-15T10:30:00Z".to_string(),
+            None,
+            None,
+            "0.1.0".to_string(),
+            modified,
+        );
+        m1.finalize();
+        m2.finalize();
+        assert_ne!(m1.pack_id, m2.pack_id);
+    }
+
+    #[test]
+    fn pack_id_changes_with_frozen_profile_identity() {
+        let mut m1 = Manifest::new(
+            "2026-01-15T10:30:00Z".to_string(),
+            None,
+            None,
+            "0.1.0".to_string(),
+            sample_members(),
+        );
+        let mut modified = sample_members();
+        modified[0].profile_frozen = Some(true);
+        modified[0].profile_sha256 = Some(
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+        );
+        modified[0].column_registry_hash = Some(
+            "blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+        );
         let mut m2 = Manifest::new(
             "2026-01-15T10:30:00Z".to_string(),
             None,

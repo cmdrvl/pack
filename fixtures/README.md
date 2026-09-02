@@ -18,7 +18,7 @@ Raw input files for `pack seal`. These are the source materials that get collect
 | `rvl.report.json` | report | rvl.v0 | seal, type-detection |
 | `verify.report.json` | report | verify.v0 | seal, type-detection |
 | `rules.json` | rules | verify.rules.v0 | seal, type-detection |
-| `profile.yaml` | profile | — | seal, type-detection |
+| `profile.yaml` | profile | frozen profile identity | seal, type-detection |
 | `unknown.txt` | other | — | seal, type-detection |
 | `nested_registry/` | registry | — | seal (directory input), type-detection |
 
@@ -33,7 +33,7 @@ Pre-built pack directories for verify and refusal integration tests.
 A complete, correctly-sealed evidence pack created from `artifacts/`. Verifies as `OK` (exit 0).
 
 - **Test families**: verify-ok, seal round-trip, witness integration
-- **pack_id**: `sha256:e78de23c97bc6b7637ee9196c77ad91f7fe0383c4753f95861cbfc9719e20875`
+- **pack_id**: `sha256:fa9f35de0eb1f93666bad494a533fe29c7703a49fed01da7aa157a23de6789c5`
 - **member_count**: 10
 
 ### packs/missing_member/

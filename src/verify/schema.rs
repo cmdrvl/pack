@@ -181,6 +181,9 @@ mod tests {
             bytes_hash: "sha256:placeholder".to_string(),
             member_type: "test".to_string(),
             artifact_version: version.map(|v| v.to_string()),
+            profile_frozen: None,
+            profile_sha256: None,
+            column_registry_hash: None,
         }
     }
 

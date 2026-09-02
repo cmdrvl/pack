@@ -30,7 +30,7 @@ If you already have the artifacts you want to preserve, start with `pack seal`. 
 
 - **Closed-set enforcement** — only declared members plus `manifest.json` are allowed in the pack directory. Extra files cause verification failure. Nothing sneaks in.
 - **Content-addressed ID** — `pack_id` is a Merkle-root-like SHA-256 of the canonical manifest. Same artifacts and manifest metadata produce the same ID; pass `--created` for reproducible repacks. Any change — even to one byte of one member — produces a different ID.
-- **Artifact type detection** — pack auto-classifies members as lockfiles, reports, profiles, or registries from their content. Known types are validated against local schemas during verification.
+- **Artifact type detection** — pack auto-classifies members as lockfiles, reports, profiles, or registries from their content. Frozen profile members carry their declared `profile_sha256` and `column_registry_hash` when present. Known JSON types are validated against local schemas during verification.
 - **Diff between packs** — `pack diff evidence/nov/ evidence/dec/` shows exactly which members were added, removed, or changed between two evidence sets.
 
 ---
@@ -537,6 +537,15 @@ Yes. Pass a directory as an artifact and its contents are recursively included w
 ### What artifact types does pack detect?
 
 Lockfiles (`lock.v0`), reports (`rvl.v0`, `shape.v0`, `verify.v0`, `compare.v0`), rules, profiles (YAML), registries (JSON registries and CSVs in registry paths), and `other` for everything else. Detection uses JSON `version` fields and YAML structure.
+
+Profile typing remains broad: YAML with `schema_version` plus `profile_id` is a
+`profile` whether it is draft or frozen. When that profile also declares
+`status: frozen` and `profile_sha256`, pack records `profile_frozen: true`,
+`profile_sha256`, and any declared `column_registry_hash` on the manifest member
+and inspect member output. Draft profiles do not get identity fields fabricated.
+Profile `schema_version` is not emitted as `artifact_version`; pack reserves
+`artifact_version` for recognized artifact `version` fields used by local JSON
+schema validation.
 
 ### Does verify modify the pack?
 

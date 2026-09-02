@@ -2,7 +2,7 @@
   "schema_version": "operator.v0",
   "name": "pack",
   "version": "0.5.0",
-  "description": "Standalone sealing entrypoint for lockfiles, reports, rules, and registry artifacts",
+  "description": "Standalone sealing entrypoint for lockfiles, reports, rules, registry artifacts, and profile identity",
   "repository": "https://github.com/cmdrvl/pack",
   "license": "MIT",
   "agent_guide": "https://github.com/cmdrvl/.github/blob/main/profile/AGENT_PROMPT.md",
@@ -32,6 +32,16 @@
   },
 
   "arguments": [],
+
+  "manifest_member_fields": [
+    "path",
+    "bytes_hash",
+    "type",
+    "artifact_version",
+    "profile_frozen",
+    "profile_sha256",
+    "column_registry_hash"
+  ],
 
   "options": [
     { "name": "no_witness", "flag": "--no-witness", "type": "flag", "description": "Suppress witness ledger recording" },
@@ -182,7 +192,13 @@
 
   "capabilities": {
     "formats": ["*"],
-    "profile_aware": false,
+    "profile_aware": true,
+    "profile_identity": {
+      "member_type_predicate": "YAML with schema_version plus profile_id remains type=profile for drafts and frozen profiles",
+      "frozen_predicate": "status: frozen plus profile_sha256",
+      "registry_hash_policy": "copy declared column_registry_hash when present on a frozen profile; pack does not read registry directories",
+      "artifact_version_policy": "profile schema_version is not emitted as artifact_version"
+    },
     "streaming": false,
     "witness": {
       "ambient_recording": "enabled_by_default",

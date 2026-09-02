@@ -236,6 +236,14 @@ Rules:
       "bytes_hash": "sha256:...",
       "type": "report",
       "artifact_version": "rvl.v0"
+    },
+    {
+      "path": "profile.yaml",
+      "bytes_hash": "sha256:...",
+      "type": "profile",
+      "profile_frozen": true,
+      "profile_sha256": "sha256:...",
+      "column_registry_hash": "blake3:..."
     }
   ],
   "member_count": 5
@@ -257,6 +265,9 @@ Rules:
 | `members[].bytes_hash` | string | yes | `sha256:<hex>` of member bytes |
 | `members[].type` | string | yes | Auto-detected member type |
 | `members[].artifact_version` | string/null | no | Parsed artifact `version` when available |
+| `members[].profile_frozen` | boolean | no | Present when a profile member declares `status: frozen` plus `profile_sha256` |
+| `members[].profile_sha256` | string | no | Declared frozen profile hash, copied from the profile YAML |
+| `members[].column_registry_hash` | string | no | Declared transitive registry hash, copied from a frozen profile YAML when present |
 
 ---
 
@@ -324,6 +335,22 @@ Copy rule:
 - Everything else → `other`
 
 `artifact_version` is populated when a recognized version field exists.
+Profile `schema_version` is not treated as `artifact_version`; profiles do not
+participate in pack's local JSON schema-validation path.
+
+Profile identity enrichment is additive:
+
+- YAML with `schema_version` plus `profile_id` remains `profile` for both draft
+  and frozen profiles.
+- A profile member is considered frozen only when it declares both
+  `status: frozen` and `profile_sha256`.
+- Frozen profile members record `profile_frozen: true`, the declared
+  `profile_sha256`, and any declared `column_registry_hash`.
+- Draft profiles do not get `profile_sha256` or `column_registry_hash`
+  fabricated.
+- `pack` does not read or hash registry directories during detection. It trusts
+  the frozen profile's declared `column_registry_hash`, which `profile freeze`
+  binds transitively into `profile_sha256`.
 
 ---
 
@@ -395,6 +422,8 @@ It reports:
 - `pack_id`, `created`, `tool_version`, optional `note`, and `member_count`.
 - Member type counts sorted by type.
 - Up to 10 largest members by on-disk file size, with deterministic tie-breaks.
+  Frozen profile members include `profile_sha256` and `column_registry_hash`
+  when those fields are present in the manifest.
 - Schema-validation eligibility based on local validator coverage.
 - `integrity.verified=false` plus a `pack verify <PACK_DIR>` next command.
 

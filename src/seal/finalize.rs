@@ -43,6 +43,9 @@ pub fn finalize_manifest(
             bytes_hash: cm.bytes_hash.clone(),
             member_type: detected.member_type,
             artifact_version: detected.artifact_version,
+            profile_frozen: detected.profile_frozen,
+            profile_sha256: detected.profile_sha256,
+            column_registry_hash: detected.column_registry_hash,
         });
     }
 
@@ -132,6 +135,44 @@ mod tests {
         let txt_member = manifest.members.iter().find(|m| m.path == "notes.txt");
         assert_eq!(txt_member.unwrap().member_type, "other");
         assert_eq!(txt_member.unwrap().artifact_version, None);
+    }
+
+    #[test]
+    fn copies_frozen_profile_identity_into_manifest_member() {
+        let staging = TempDir::new().unwrap();
+        let profile = b"schema_version: 1\nprofile_id: csv.tape.core.v0\nprofile_sha256: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nstatus: frozen\ncolumn_registry_hash: blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n";
+        fs::write(staging.path().join("profile.yaml"), profile).unwrap();
+        let copied = vec![CopiedMember {
+            member_path: "profile.yaml".to_string(),
+            bytes_hash: "sha256:profile".to_string(),
+            size: profile.len() as u64,
+        }];
+
+        let manifest = finalize_manifest(
+            &copied,
+            staging.path(),
+            "2026-01-15T10:30:00Z".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
+
+        let member = manifest
+            .members
+            .iter()
+            .find(|m| m.path == "profile.yaml")
+            .unwrap();
+        assert_eq!(member.member_type, "profile");
+        assert_eq!(member.artifact_version, None);
+        assert_eq!(member.profile_frozen, Some(true));
+        assert_eq!(
+            member.profile_sha256.as_deref(),
+            Some("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        );
+        assert_eq!(
+            member.column_registry_hash.as_deref(),
+            Some("blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+        );
     }
 
     #[test]

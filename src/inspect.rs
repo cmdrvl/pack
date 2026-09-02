@@ -40,6 +40,12 @@ pub struct MemberInspect {
     #[serde(rename = "type")]
     pub member_type: String,
     pub artifact_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_frozen: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column_registry_hash: Option<String>,
     pub bytes_hash: String,
     pub size_bytes: Option<u64>,
 }
@@ -181,6 +187,14 @@ impl InspectReport {
                 "    - {} ({}, {})",
                 member.path, size, member.member_type
             ));
+            if let Some(profile_sha256) = &member.profile_sha256 {
+                lines.push(format!("      profile_sha256: {profile_sha256}"));
+            }
+            if let Some(column_registry_hash) = &member.column_registry_hash {
+                lines.push(format!(
+                    "      column_registry_hash: {column_registry_hash}"
+                ));
+            }
         }
         lines.push(format!(
             "  schema eligibility: {} eligible, {} skipped",
@@ -209,6 +223,9 @@ fn largest_members(pack_dir: &Path, manifest: &Manifest) -> Vec<MemberInspect> {
             path: member.path.clone(),
             member_type: member.member_type.clone(),
             artifact_version: member.artifact_version.clone(),
+            profile_frozen: member.profile_frozen,
+            profile_sha256: member.profile_sha256.clone(),
+            column_registry_hash: member.column_registry_hash.clone(),
             bytes_hash: member.bytes_hash.clone(),
             size_bytes: fs::metadata(pack_dir.join(&member.path))
                 .ok()
@@ -328,5 +345,46 @@ mod tests {
         let refusal: serde_json::Value = serde_json::from_str(&output).unwrap();
         assert_eq!(refusal["outcome"], "REFUSAL");
         assert_eq!(refusal["refusal"]["code"], "E_BAD_PACK");
+    }
+
+    #[test]
+    fn inspect_surfaces_frozen_profile_identity() {
+        let tmp = tempfile::tempdir().unwrap();
+        let profile = tmp.path().join("profile.yaml");
+        fs::write(
+            &profile,
+            "schema_version: 1\nprofile_id: csv.tape.core.v0\nprofile_sha256: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nstatus: frozen\ncolumn_registry_hash: blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+        )
+        .unwrap();
+        let pack_dir = tmp.path().join("pack");
+        execute_seal(
+            &[profile],
+            Some(&pack_dir),
+            None,
+            Some("2026-01-15T10:30:00Z"),
+            None,
+        )
+        .unwrap();
+
+        let (json_output, json_code) = execute_inspect(&pack_dir, true);
+        assert_eq!(json_code, 0);
+        let report: serde_json::Value = serde_json::from_str(&json_output).unwrap();
+        let member = &report["largest_members"][0];
+        assert_eq!(member["path"], "profile.yaml");
+        assert_eq!(member["type"], "profile");
+        assert_eq!(member["profile_frozen"], true);
+        assert_eq!(
+            member["profile_sha256"],
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+        assert_eq!(
+            member["column_registry_hash"],
+            "blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
+
+        let (human_output, human_code) = execute_inspect(&pack_dir, false);
+        assert_eq!(human_code, 0);
+        assert!(human_output.contains("profile_sha256: sha256:"));
+        assert!(human_output.contains("column_registry_hash: blake3:"));
     }
 }

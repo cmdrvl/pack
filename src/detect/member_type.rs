@@ -5,6 +5,34 @@ pub struct MemberTypeResult {
     pub member_type: String,
     /// Parsed artifact version, if available.
     pub artifact_version: Option<String>,
+    /// True only when a YAML profile declares the frozen-profile identity pair.
+    pub profile_frozen: Option<bool>,
+    /// Declared frozen profile hash, copied from the profile YAML.
+    pub profile_sha256: Option<String>,
+    /// Declared transitive column registry hash, copied from the profile YAML.
+    pub column_registry_hash: Option<String>,
+}
+
+impl MemberTypeResult {
+    fn new(member_type: &str, artifact_version: Option<&str>) -> Self {
+        Self {
+            member_type: member_type.to_string(),
+            artifact_version: artifact_version.map(ToOwned::to_owned),
+            profile_frozen: None,
+            profile_sha256: None,
+            column_registry_hash: None,
+        }
+    }
+
+    fn frozen_profile(profile_sha256: String, column_registry_hash: Option<String>) -> Self {
+        Self {
+            member_type: "profile".to_string(),
+            artifact_version: None,
+            profile_frozen: Some(true),
+            profile_sha256: Some(profile_sha256),
+            column_registry_hash,
+        }
+    }
 }
 
 /// Detect member type and artifact version from file content.
@@ -34,16 +62,10 @@ pub fn detect_member_type(content: &[u8], path: &str) -> MemberTypeResult {
 
     // Registry heuristic by filename.
     if is_registry_path(path) {
-        return MemberTypeResult {
-            member_type: "registry".to_string(),
-            artifact_version: None,
-        };
+        return MemberTypeResult::new("registry", None);
     }
 
-    MemberTypeResult {
-        member_type: "other".to_string(),
-        artifact_version: None,
-    }
+    MemberTypeResult::new("other", None)
 }
 
 /// Attempt to detect type from JSON content by looking for a `version` field.
@@ -52,26 +74,13 @@ fn detect_from_json(text: &str) -> Option<MemberTypeResult> {
     let version = value.get("version")?.as_str()?;
 
     match version {
-        "lock.v0" => Some(MemberTypeResult {
-            member_type: "lockfile".to_string(),
-            artifact_version: Some("lock.v0".to_string()),
-        }),
-        "rvl.v0" | "shape.v0" | "verify.v0" | "compare.v0" => Some(MemberTypeResult {
-            member_type: "report".to_string(),
-            artifact_version: Some(version.to_string()),
-        }),
-        "canon.v0" | "assess.v0" => Some(MemberTypeResult {
-            member_type: "artifact".to_string(),
-            artifact_version: Some(version.to_string()),
-        }),
-        "verify.rules.v0" => Some(MemberTypeResult {
-            member_type: "rules".to_string(),
-            artifact_version: Some("verify.rules.v0".to_string()),
-        }),
-        "pack.v0" => Some(MemberTypeResult {
-            member_type: "pack".to_string(),
-            artifact_version: Some("pack.v0".to_string()),
-        }),
+        "lock.v0" => Some(MemberTypeResult::new("lockfile", Some("lock.v0"))),
+        "rvl.v0" | "shape.v0" | "verify.v0" | "compare.v0" => {
+            Some(MemberTypeResult::new("report", Some(version)))
+        }
+        "canon.v0" | "assess.v0" => Some(MemberTypeResult::new("artifact", Some(version))),
+        "verify.rules.v0" => Some(MemberTypeResult::new("rules", Some("verify.rules.v0"))),
+        "pack.v0" => Some(MemberTypeResult::new("pack", Some("pack.v0"))),
         _ => None,
     }
 }
@@ -79,22 +88,47 @@ fn detect_from_json(text: &str) -> Option<MemberTypeResult> {
 /// Attempt to detect YAML profile (schema_version + profile_id).
 fn detect_from_yaml(text: &str) -> Option<MemberTypeResult> {
     // Simple line-based detection — avoid pulling in a YAML parser.
-    let has_schema_version = text.lines().any(|l| {
-        let trimmed = l.trim();
-        trimmed.starts_with("schema_version:")
-    });
-    let has_profile_id = text.lines().any(|l| {
-        let trimmed = l.trim();
-        trimmed.starts_with("profile_id:")
-    });
+    let has_schema_version = yaml_scalar_value(text, "schema_version").is_some();
+    let has_profile_id = yaml_scalar_value(text, "profile_id").is_some();
 
     if has_schema_version && has_profile_id {
-        Some(MemberTypeResult {
-            member_type: "profile".to_string(),
-            artifact_version: None,
-        })
+        let profile_sha256 = yaml_scalar_value(text, "profile_sha256");
+        let status = yaml_scalar_value(text, "status");
+        if status.as_deref() == Some("frozen") {
+            if let Some(profile_sha256) = profile_sha256 {
+                return Some(MemberTypeResult::frozen_profile(
+                    profile_sha256,
+                    yaml_scalar_value(text, "column_registry_hash"),
+                ));
+            }
+        }
+
+        Some(MemberTypeResult::new("profile", None))
     } else {
         None
+    }
+}
+
+fn yaml_scalar_value(text: &str, key: &str) -> Option<String> {
+    let prefix = format!("{key}:");
+    text.lines().find_map(|line| {
+        let value = line.trim().strip_prefix(&prefix)?.trim();
+        let value = trim_matching_yaml_quotes(value);
+        (!value.is_empty()).then(|| value.to_string())
+    })
+}
+
+fn trim_matching_yaml_quotes(value: &str) -> &str {
+    if value.len() < 2 {
+        return value;
+    }
+
+    let mut chars = value.chars();
+    let first = chars.next();
+    let last = value.chars().next_back();
+    match (first, last) {
+        (Some('"'), Some('"')) | (Some('\''), Some('\'')) => &value[1..value.len() - 1],
+        _ => value,
     }
 }
 
@@ -125,6 +159,9 @@ fn detect_fingerprint_yaml(text: &str, path: &str) -> Option<MemberTypeResult> {
         Some(MemberTypeResult {
             member_type: "fingerprint".to_string(),
             artifact_version,
+            profile_frozen: None,
+            profile_sha256: None,
+            column_registry_hash: None,
         })
     } else {
         None
@@ -221,6 +258,36 @@ mod tests {
         let result = detect_member_type(content, "profile.yaml");
         assert_eq!(result.member_type, "profile");
         assert_eq!(result.artifact_version, None);
+        assert_eq!(result.profile_frozen, None);
+        assert_eq!(result.profile_sha256, None);
+        assert_eq!(result.column_registry_hash, None);
+    }
+
+    #[test]
+    fn detects_frozen_profile_identity_without_changing_type() {
+        let content = b"schema_version: 1\nprofile_id: csv.tape.core.v0\nprofile_sha256: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nstatus: frozen\ncolumn_registry_hash: blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n";
+        let result = detect_member_type(content, "profile.yaml");
+        assert_eq!(result.member_type, "profile");
+        assert_eq!(result.artifact_version, None);
+        assert_eq!(result.profile_frozen, Some(true));
+        assert_eq!(
+            result.profile_sha256.as_deref(),
+            Some("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        );
+        assert_eq!(
+            result.column_registry_hash.as_deref(),
+            Some("blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+        );
+    }
+
+    #[test]
+    fn profile_sha_without_frozen_status_is_not_frozen_identity() {
+        let content = b"schema_version: 1\nprofile_id: draft\nprofile_sha256: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nstatus: draft\ncolumn_registry_hash: blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n";
+        let result = detect_member_type(content, "profile.yaml");
+        assert_eq!(result.member_type, "profile");
+        assert_eq!(result.profile_frozen, None);
+        assert_eq!(result.profile_sha256, None);
+        assert_eq!(result.column_registry_hash, None);
     }
 
     #[test]

@@ -152,6 +152,9 @@ mod tests {
             bytes_hash: format!("sha256:{hash}"),
             member_type: "other".to_string(),
             artifact_version: None,
+            profile_frozen: None,
+            profile_sha256: None,
+            column_registry_hash: None,
         }
     }
 

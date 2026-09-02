@@ -125,6 +125,25 @@ mod tests {
     }
 
     #[test]
+    fn operator_manifest_documents_profile_identity_fields() {
+        let op = operator_json();
+        assert_eq!(op["capabilities"]["profile_aware"], true);
+        assert_eq!(
+            op["capabilities"]["profile_identity"]["frozen_predicate"],
+            "status: frozen plus profile_sha256"
+        );
+        let fields: Vec<&str> = op["manifest_member_fields"]
+            .as_array()
+            .expect("manifest_member_fields must be an array")
+            .iter()
+            .filter_map(|field| field.as_str())
+            .collect();
+        assert!(fields.contains(&"profile_frozen"));
+        assert!(fields.contains(&"profile_sha256"));
+        assert!(fields.contains(&"column_registry_hash"));
+    }
+
+    #[test]
     fn operator_manifest_has_no_transport_env_contract() {
         let op = operator_json();
         assert!(op["capabilities"].get("transport").is_none());

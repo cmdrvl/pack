@@ -329,6 +329,9 @@ mod tests {
                 bytes_hash: hash.clone(),
                 member_type: "other".to_string(),
                 artifact_version: None,
+                profile_frozen: None,
+                profile_sha256: None,
+                column_registry_hash: None,
             })
             .collect::<Vec<_>>();
         let mut manifest = Manifest::new(

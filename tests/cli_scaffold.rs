@@ -82,6 +82,20 @@ fn schema_includes_primary_outcome_tag() {
 }
 
 #[test]
+fn schema_includes_profile_identity_member_fields() {
+    let output = pack_cmd().arg("--schema").output().unwrap();
+    assert!(output.status.success());
+    let schema: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let member = &schema["definitions"]["member"]["properties"];
+    assert_eq!(member["profile_frozen"]["type"], "boolean");
+    assert_eq!(member["profile_sha256"]["pattern"], "^sha256:[a-f0-9]{64}$");
+    assert_eq!(
+        member["column_registry_hash"]["pattern"],
+        "^blake3:[a-f0-9]{64}$"
+    );
+}
+
+#[test]
 fn no_command_exits_2() {
     let output = pack_cmd().output().unwrap();
     assert_eq!(output.status.code(), Some(2));

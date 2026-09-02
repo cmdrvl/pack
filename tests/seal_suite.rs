@@ -591,6 +591,113 @@ fn seal_type_detection_matches_expectations() {
     assert_eq!(type_map["unknown.txt"], "other");
     assert_eq!(type_map["nested_registry/registry.json"], "registry");
     assert_eq!(type_map["nested_registry/loans.csv"], "registry");
+
+    let profile_member = members
+        .iter()
+        .find(|member| member["path"] == "profile.yaml")
+        .unwrap();
+    assert_eq!(profile_member["profile_frozen"], true);
+    assert_eq!(
+        profile_member["profile_sha256"],
+        "sha256:0e70b4f7b8a96cbc3e9719243847c2f92ff8042bf22dc5952150db488ca5b694"
+    );
+    assert_eq!(
+        profile_member["column_registry_hash"],
+        "blake3:297baeed49fdb5a003b9a09d3b8b94a05dd739a52ae8e6fe0d42f7ae5e2cdb3f"
+    );
+}
+
+#[test]
+fn frozen_profile_identity_is_recorded_in_manifest_member() {
+    let tmp = tempfile::tempdir().unwrap();
+    let profile = tmp.path().join("profile.yaml");
+    std::fs::write(
+        &profile,
+        "schema_version: 1\nprofile_id: csv.tape.core.v0\nprofile_version: 0\nprofile_family: csv.tape.core\nprofile_sha256: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nstatus: frozen\nformat: csv\ncolumn_registry: registry\ncolumn_registry_hash: blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+    )
+    .unwrap();
+    let output_dir = tmp.path().join("pack");
+
+    let output = pack_cmd()
+        .args([
+            "seal",
+            profile.to_str().unwrap(),
+            "--output",
+            output_dir.to_str().unwrap(),
+            "--created",
+            "2026-01-15T10:30:00Z",
+            "--no-witness",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "seal failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let manifest_content = std::fs::read_to_string(output_dir.join("manifest.json")).unwrap();
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_content).unwrap();
+    let member = manifest["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|member| member["path"] == "profile.yaml")
+        .unwrap();
+
+    assert_eq!(member["type"], "profile");
+    assert_eq!(member.get("artifact_version"), None);
+    assert_eq!(member["profile_frozen"], true);
+    assert_eq!(
+        member["profile_sha256"],
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
+    assert_eq!(
+        member["column_registry_hash"],
+        "blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    );
+}
+
+#[test]
+fn draft_profile_remains_profile_without_fabricated_identity() {
+    let tmp = tempfile::tempdir().unwrap();
+    let profile = tmp.path().join("profile.yaml");
+    std::fs::write(
+        &profile,
+        "schema_version: 1\nprofile_id: draft_profile\nstatus: draft\ncolumn_registry: registry\nfields:\n  - name: loan_id\n",
+    )
+    .unwrap();
+    let output_dir = tmp.path().join("pack");
+
+    let output = pack_cmd()
+        .args([
+            "seal",
+            profile.to_str().unwrap(),
+            "--output",
+            output_dir.to_str().unwrap(),
+            "--created",
+            "2026-01-15T10:30:00Z",
+            "--no-witness",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "seal failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let manifest_content = std::fs::read_to_string(output_dir.join("manifest.json")).unwrap();
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_content).unwrap();
+    let member = &manifest["members"][0];
+
+    assert_eq!(member["type"], "profile");
+    assert_eq!(member.get("artifact_version"), None);
+    assert_eq!(member.get("profile_frozen"), None);
+    assert_eq!(member.get("profile_sha256"), None);
+    assert_eq!(member.get("column_registry_hash"), None);
 }
 
 #[cfg(unix)]

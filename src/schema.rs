@@ -59,6 +59,18 @@ pub fn pack_schema() -> Value {
                     },
                     "artifact_version": {
                         "type": ["string", "null"]
+                    },
+                    "profile_frozen": {
+                        "type": "boolean",
+                        "description": "Present and true when a profile member declares status: frozen plus profile_sha256."
+                    },
+                    "profile_sha256": {
+                        "type": "string",
+                        "pattern": "^sha256:[a-f0-9]{64}$"
+                    },
+                    "column_registry_hash": {
+                        "type": "string",
+                        "pattern": "^blake3:[a-f0-9]{64}$"
                     }
                 },
                 "additionalProperties": false
@@ -166,6 +178,18 @@ mod tests {
         let tag = &s["definitions"]["manifest"]["properties"]["primary_outcome_tag"];
         assert_eq!(tag["type"], serde_json::json!(["string", "null"]));
         assert_eq!(tag["pattern"], "^cmdrvl://.+$");
+    }
+
+    #[test]
+    fn member_definition_includes_optional_profile_identity() {
+        let s = pack_schema();
+        let member = &s["definitions"]["member"]["properties"];
+        assert_eq!(member["profile_frozen"]["type"], "boolean");
+        assert_eq!(member["profile_sha256"]["pattern"], "^sha256:[a-f0-9]{64}$");
+        assert_eq!(
+            member["column_registry_hash"]["pattern"],
+            "^blake3:[a-f0-9]{64}$"
+        );
     }
 
     #[test]

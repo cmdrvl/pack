@@ -141,6 +141,27 @@ const REQUIREMENTS: &[Requirement] = &[
         ],
     },
     Requirement {
+        id: "PCK-PROFILE-001",
+        evidence: &[
+            Evidence {
+                file: "tests/seal_suite.rs",
+                test: "frozen_profile_identity_is_recorded_in_manifest_member",
+            },
+            Evidence {
+                file: "tests/seal_suite.rs",
+                test: "draft_profile_remains_profile_without_fabricated_identity",
+            },
+            Evidence {
+                file: "src/detect/member_type.rs",
+                test: "detects_frozen_profile_identity_without_changing_type",
+            },
+            Evidence {
+                file: "src/inspect.rs",
+                test: "inspect_surfaces_frozen_profile_identity",
+            },
+        ],
+    },
+    Requirement {
         id: "PCK-WIT-001",
         evidence: &[
             Evidence {
