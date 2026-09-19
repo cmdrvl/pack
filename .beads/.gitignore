@@ -10,3 +10,13 @@
 last-touched
 *.tmp
 .br_history/
+
+# br 0.6.0 local state (never commit): database family, locks, recovery, history, merge anchor
+*.db-wal*
+*.db-journal
+*-fsqlite-ns-gate
+*-fsqlite-ns-use
+*.vacuum-wal-cert*
+*.fsqlite-migration-state
+.br_recovery/
+beads.base.jsonl
