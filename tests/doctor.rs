@@ -41,7 +41,7 @@ fn doctor_report(tmp: &tempfile::TempDir, args: &[&str], mode: &str) -> Value {
 fn doctor_health_uses_family_schema_and_is_read_only() {
     let tmp = tempfile::tempdir().unwrap();
     let payload = doctor_report(&tmp, &["doctor", "--json"], "health");
-    assert_eq!(payload["findings"].as_array().map(Vec::len), Some(5));
+    assert_eq!(payload["findings"].as_array().map(Vec::len), Some(6));
 }
 
 #[test]
@@ -61,6 +61,25 @@ fn doctor_capabilities_embeds_the_exact_operator_contract() {
     let capabilities: Value = serde_json::from_slice(&capabilities_output.stdout).unwrap();
     assert_eq!(doctor["contract"], capabilities);
     assert_eq!(capabilities["schema_version"], "operator.v1");
+
+    let side_effects = capabilities["side_effects"].as_object().unwrap();
+    assert_eq!(side_effects["reads_files"], true);
+    assert_eq!(side_effects["writes_files"], true);
+    assert_eq!(side_effects["network"], false);
+    assert_eq!(side_effects["writes_witness"], true);
+
+    let composition = &capabilities["capabilities"]["composition"];
+    assert_eq!(composition["family"]["name"], "cmdrvl-spine");
+    assert_eq!(composition["position"], 5);
+    assert_eq!(composition["produces"][0], "pack.v0 directory");
+    assert!(composition["accepts"]
+        .as_array()
+        .is_some_and(|values| values.iter().any(|value| value == "lock.v0 JSON")));
+    assert_eq!(capabilities["capabilities"]["doctor"]["read_only"], true);
+    assert_eq!(
+        capabilities["capabilities"]["doctor"]["fix_mode"],
+        "not_available"
+    );
 }
 
 #[test]
@@ -88,6 +107,49 @@ fn top_level_capabilities_matches_describe() {
     let describe_json: Value = serde_json::from_slice(&describe.stdout).unwrap();
     let capabilities_json: Value = serde_json::from_slice(&capabilities.stdout).unwrap();
     assert_eq!(describe_json, capabilities_json);
+}
+
+#[test]
+fn top_level_robot_triage_is_a_doctor_v1_witness() {
+    let tmp = tempfile::tempdir().unwrap();
+    let output = isolated_pack_cmd(&tmp)
+        .arg("--robot-triage")
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    assert!(!tmp.path().join("witness.jsonl").exists());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["schema_version"], "cmdrvl.doctor.v1");
+    assert_eq!(payload["mode"], "triage");
+    assert_eq!(payload["tool"], "pack");
+    assert_eq!(payload["healthy"], true);
+}
+
+#[test]
+fn robot_docs_guide_preserves_agent_operating_content() {
+    let tmp = tempfile::tempdir().unwrap();
+    let output = isolated_pack_cmd(&tmp)
+        .args(["robot-docs", "guide"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    for expected in [
+        "pack --robot-triage",
+        "pack capabilities --json",
+        "pack robot-docs guide",
+        "pack doctor triage --json",
+        "pack seal ... --out <DIR>",
+        "--output",
+        "NO_COLOR",
+        "Repair policy",
+    ] {
+        assert!(stdout.contains(expected), "robot-docs omitted {expected:?}");
+    }
 }
 
 #[test]
@@ -136,7 +198,10 @@ fn seal_accepts_canonical_out_alias_and_keeps_output_compatibility() {
 fn no_color_and_non_tty_help_are_ansi_free() {
     for no_color in [true, false] {
         let mut command = pack_cmd();
-        command.arg("--help");
+        command
+            .arg("--help")
+            .env("CLICOLOR_FORCE", "1")
+            .env("TERM", "xterm-256color");
         if no_color {
             command.env("NO_COLOR", "1").env("TERM", "dumb");
         } else {
@@ -146,6 +211,28 @@ fn no_color_and_non_tty_help_are_ansi_free() {
         assert!(!output.stdout.contains(&0x1b), "help stdout contained ANSI");
         assert!(!output.stderr.contains(&0x1b), "help stderr contained ANSI");
     }
+}
+
+#[test]
+fn unhealthy_doctor_state_exits_one() {
+    let tmp = tempfile::tempdir().unwrap();
+    let output = isolated_pack_cmd(&tmp)
+        .args(["doctor", "--json"])
+        .env("SOURCE_DATE_EPOCH", "not-unix-seconds")
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["schema_version"], "cmdrvl.doctor.v1");
+    assert_eq!(payload["mode"], "health");
+    assert_eq!(payload["healthy"], false);
+    assert!(payload["findings"].as_array().is_some_and(|findings| {
+        findings.iter().any(|finding| {
+            finding["id"] == "pack.source_date_epoch" && finding["severity"] == "error"
+        })
+    }));
 }
 
 #[test]

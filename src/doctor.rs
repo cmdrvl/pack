@@ -121,6 +121,7 @@ fn health_findings() -> Vec<Value> {
         check_witness_path_resolution(),
         check_artifact_command_contract(),
         check_transport_contract(),
+        check_source_date_epoch(),
     ]
     .into_iter()
     .map(|check| {
@@ -245,6 +246,33 @@ fn check_transport_contract() -> Value {
         "Doctor commands do not read network configuration or open network connections.",
         json!({"uses_network": false, "reads_network_env": false}),
     )
+}
+
+fn check_source_date_epoch() -> Value {
+    let Some(value) = std::env::var_os("SOURCE_DATE_EPOCH") else {
+        return check(
+            "source_date_epoch",
+            "ok",
+            "SOURCE_DATE_EPOCH is not set; seal timestamps use the current UTC time.",
+            json!({"set": false}),
+        );
+    };
+
+    let value = value.to_string_lossy();
+    match value.parse::<i64>() {
+        Ok(seconds) => check(
+            "source_date_epoch",
+            "ok",
+            "SOURCE_DATE_EPOCH is a valid Unix-seconds timestamp.",
+            json!({"set": true, "seconds": seconds}),
+        ),
+        Err(error) => check(
+            "source_date_epoch",
+            "error",
+            "SOURCE_DATE_EPOCH must contain Unix seconds.",
+            json!({"set": true, "value": value, "error": error.to_string()}),
+        ),
+    }
 }
 
 fn check(name: &str, status: &str, message: &str, details: Value) -> Value {

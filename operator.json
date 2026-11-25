@@ -1,7 +1,7 @@
 {
   "schema_version": "operator.v1",
   "name": "pack",
-  "version": "0.6.0",
+  "tool_version": "0.6.0",
   "contract_version": "1.0.0",
   "description": "Seal lockfiles, reports, rules, registry artifacts, and profile identity into immutable evidence packs",
   "repository": "https://github.com/cmdrvl/pack",
@@ -102,6 +102,22 @@
       "ambient_recording": "enabled_by_default",
       "query_subcommands": true,
       "no_witness_flag": "suppresses_recording"
+    },
+    "composition": {
+      "family": { "name": "cmdrvl-spine" },
+      "position": 5,
+      "produces": ["pack.v0 directory"],
+      "accepts": ["lock.v0 JSON", "canon.v0 JSON", "rvl.v0 JSON"]
+    },
+    "doctor": {
+      "read_only": true,
+      "robot_triage": true,
+      "top_level_surfaces": [
+        "pack --robot-triage",
+        "pack capabilities --json",
+        "pack robot-docs guide"
+      ],
+      "fix_mode": "not_available"
     }
   },
   "pipeline": {
