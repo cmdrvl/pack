@@ -44,6 +44,7 @@ mod tests {
         for name in [
             "seal",
             "verify",
+            "render",
             "inspect",
             "diff",
             "archive",

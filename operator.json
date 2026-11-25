@@ -12,6 +12,7 @@
     "usage": [
       "pack seal <ARTIFACT>... --out <DIR>",
       "pack verify <PACK_DIR> --json",
+      "pack render <PACK_DIR> --format <html|md> --out <FILE>",
       "pack capabilities --json",
       "pack doctor --json"
     ],
@@ -46,6 +47,7 @@
       ]
     },
     { "name": "verify", "description": "Verify pack integrity and schema eligibility", "status": "implemented" },
+    { "name": "render", "description": "Render a verified pack as a self-contained HTML or Markdown audit dossier", "status": "implemented", "read_only": false },
     { "name": "inspect", "description": "Read pack metadata without verifying integrity", "status": "implemented", "witness": "not_recorded" },
     { "name": "diff", "description": "Deterministically diff two packs", "status": "implemented" },
     { "name": "archive", "description": "Export or import deterministic tar wrappers", "status": "implemented", "witness": "not_recorded" },
@@ -85,7 +87,7 @@
     "writes_files": true,
     "network": false,
     "writes_witness": true,
-    "notes": "Seal and archive import write artifacts; doctor and introspection commands are read-only."
+    "notes": "Seal, render, and archive import write artifacts; doctor and introspection commands are read-only."
   },
   "manifest_member_fields": ["path", "bytes_hash", "type", "artifact_version", "profile_frozen", "profile_sha256", "column_registry_hash"],
   "capabilities": {

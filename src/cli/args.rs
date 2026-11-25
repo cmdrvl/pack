@@ -1,4 +1,4 @@
-use clap::{Args, ColorChoice, Parser, Subcommand};
+use clap::{Args, ColorChoice, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -6,7 +6,7 @@ use std::path::PathBuf;
     name = "pack",
     about = "Seal lockfiles, reports, rules, and registry artifacts into one immutable, self-verifiable evidence pack.",
     version,
-    override_usage = "pack [OPTIONS] <COMMAND>\n       pack --robot-triage\n       pack capabilities --json\n       pack robot-docs guide\n       pack seal <ARTIFACT>... [OPTIONS]\n       pack verify <PACK_DIR> [OPTIONS]\n       pack inspect <PACK_DIR> [OPTIONS]\n       pack diff <A> <B> [OPTIONS]\n       pack archive <export|import> ...\n       pack witness <query|last|count> [OPTIONS]\n       pack doctor <health|capabilities|robot-docs> [OPTIONS]"
+    override_usage = "pack [OPTIONS] <COMMAND>\n       pack --robot-triage\n       pack capabilities --json\n       pack robot-docs guide\n       pack seal <ARTIFACT>... [OPTIONS]\n       pack verify <PACK_DIR> [OPTIONS]\n       pack render <PACK_DIR> --format <html|md> --out <FILE>\n       pack inspect <PACK_DIR> [OPTIONS]\n       pack diff <A> <B> [OPTIONS]\n       pack archive <export|import> ...\n       pack witness <query|last|count> [OPTIONS]\n       pack doctor <health|capabilities|robot-docs> [OPTIONS]"
 )]
 #[command(color = ColorChoice::Never)]
 pub struct Cli {
@@ -63,6 +63,20 @@ pub enum Command {
         /// Output as JSON.
         #[arg(long)]
         json: bool,
+    },
+
+    /// Render a verified pack as a self-contained audit dossier.
+    Render {
+        /// Path to the pack directory.
+        pack_dir: PathBuf,
+
+        /// Dossier format.
+        #[arg(long, value_enum)]
+        format: RenderFormat,
+
+        /// Output file to write.
+        #[arg(long)]
+        out: PathBuf,
     },
 
     /// Inspect pack metadata without verifying integrity.
@@ -126,6 +140,12 @@ pub enum Command {
         #[command(subcommand)]
         action: Option<DoctorAction>,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum RenderFormat {
+    Html,
+    Md,
 }
 
 #[derive(Args, Debug)]

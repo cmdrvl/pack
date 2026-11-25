@@ -8,6 +8,7 @@ pub mod operator;
 mod parallel;
 mod paths;
 pub mod refusal;
+pub mod render;
 pub mod schema;
 pub mod seal;
 mod staging;
@@ -170,6 +171,20 @@ pub fn run() -> u8 {
             println!("{output}");
             exit_code
         }
+        Command::Render {
+            pack_dir,
+            format,
+            out,
+        } => match render::execute_render(&pack_dir, format, &out) {
+            Ok(result) => {
+                println!("RENDERED {}", result.pack_id);
+                ExitCode::Success.into()
+            }
+            Err(envelope) => {
+                println!("{}", envelope.to_json());
+                ExitCode::Refusal.into()
+            }
+        },
         // Inspect is intentionally read-only metadata and does not append witness records.
         Command::Inspect { pack_dir, json } => {
             let (output, exit_code) = inspect::execute_inspect(&pack_dir, json);
