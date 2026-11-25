@@ -39,9 +39,9 @@ impl MemberTypeResult {
 ///
 /// Detection rules (from plan contract):
 /// - `lock.v0` → `lockfile`
-/// - `rvl.v0`, `shape.v0`, `verify.v0`, `compare.v0` → `report`
+/// - `rvl.v0`, `shape.v0`, `verify.v0`, `verify.report.v1`, `compare.v0` → `report`
 /// - `canon.v0`, `assess.v0` → `artifact`
-/// - `verify.rules.v0` → `rules`
+/// - `verify.rules.v0`, `verify.constraint.v1` → `rules`
 /// - `pack.v0` → `pack`
 /// - YAML with `schema_version` + `profile_id` → `profile`
 /// - Registry artifacts (`registry.json`, registry tables) → `registry`
@@ -75,11 +75,13 @@ fn detect_from_json(text: &str) -> Option<MemberTypeResult> {
 
     match version {
         "lock.v0" => Some(MemberTypeResult::new("lockfile", Some("lock.v0"))),
-        "rvl.v0" | "shape.v0" | "verify.v0" | "compare.v0" => {
+        "rvl.v0" | "shape.v0" | "verify.v0" | "verify.report.v1" | "compare.v0" => {
             Some(MemberTypeResult::new("report", Some(version)))
         }
         "canon.v0" | "assess.v0" => Some(MemberTypeResult::new("artifact", Some(version))),
-        "verify.rules.v0" => Some(MemberTypeResult::new("rules", Some("verify.rules.v0"))),
+        "verify.rules.v0" | "verify.constraint.v1" => {
+            Some(MemberTypeResult::new("rules", Some(version)))
+        }
         "pack.v0" => Some(MemberTypeResult::new("pack", Some("pack.v0"))),
         _ => None,
     }
@@ -213,6 +215,14 @@ mod tests {
     }
 
     #[test]
+    fn detects_verify_report_v1() {
+        let content = br#"{"version": "verify.report.v1", "summary": {}}"#;
+        let result = detect_member_type(content, "verify.report.v1.json");
+        assert_eq!(result.member_type, "report");
+        assert_eq!(result.artifact_version.as_deref(), Some("verify.report.v1"));
+    }
+
+    #[test]
     fn detects_compare_report() {
         let content = br#"{"version": "compare.v0"}"#;
         let result = detect_member_type(content, "compare.report.json");
@@ -242,6 +252,17 @@ mod tests {
         let result = detect_member_type(content, "rules.json");
         assert_eq!(result.member_type, "rules");
         assert_eq!(result.artifact_version.as_deref(), Some("verify.rules.v0"));
+    }
+
+    #[test]
+    fn detects_verify_constraint_v1_as_rules() {
+        let content = br#"{"version": "verify.constraint.v1", "bindings": [], "rules": []}"#;
+        let result = detect_member_type(content, "verify.constraint.v1.json");
+        assert_eq!(result.member_type, "rules");
+        assert_eq!(
+            result.artifact_version.as_deref(),
+            Some("verify.constraint.v1")
+        );
     }
 
     #[test]

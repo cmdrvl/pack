@@ -1,0 +1,12 @@
+constraint_set_id: fixtures.gt9.not_null
+bindings:
+  input:
+    key_fields:
+      - loan_id
+rules:
+  - id: INPUT_LOAN_ID_PRESENT
+    severity: error
+    binding: input
+    op: not_null
+    columns:
+      - loan_id

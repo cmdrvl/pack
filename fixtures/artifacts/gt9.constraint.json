@@ -1,0 +1,27 @@
+{
+  "version": "verify.constraint.v1",
+  "constraint_set_id": "fixtures.gt9.not_null",
+  "bindings": [
+    {
+      "name": "input",
+      "kind": "relation",
+      "key_fields": [
+        "loan_id"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "INPUT_LOAN_ID_PRESENT",
+      "severity": "error",
+      "portability": "portable",
+      "check": {
+        "op": "not_null",
+        "binding": "input",
+        "columns": [
+          "loan_id"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "tool": "verify",
+  "version": "verify.report.v1",
+  "execution_mode": "batch",
+  "outcome": "PASS",
+  "constraint_set_id": "fixtures.gt9.not_null",
+  "constraint_hash": "sha256:e84a3ae47b3baefe1ab91690552365cd53e3d2df9daa8dda05154bb51d015807",
+  "bindings": {
+    "input": {
+      "kind": "relation",
+      "source": "fixtures/artifacts/gt9-small.csv",
+      "content_hash": "sha256:19ae0daca23c47585c29ec1e1932f1686c90d11f112bf83cf9b0db93fbc254e5",
+      "input_verification": null
+    }
+  },
+  "summary": {
+    "total_rules": 1,
+    "passed_rules": 1,
+    "failed_rules": 0,
+    "by_severity": {
+      "error": 0,
+      "warn": 0
+    }
+  },
+  "policy_signals": {
+    "severity_band": "CLEAN"
+  },
+  "results": [
+    {
+      "rule_id": "INPUT_LOAN_ID_PRESENT",
+      "severity": "error",
+      "status": "pass",
+      "violation_count": 0,
+      "affected": []
+    }
+  ],
+  "refusal": null
+}

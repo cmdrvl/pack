@@ -63,6 +63,32 @@ fn full_pack() -> (TempDir, std::path::PathBuf) {
     (tmp, pack_dir)
 }
 
+fn current_verify_lock_pack() -> (TempDir, std::path::PathBuf) {
+    let tmp = tempfile::tempdir().unwrap();
+    let pack_dir = tmp.path().join("pack");
+    let output = pack_cmd()
+        .args([
+            "--no-witness",
+            "seal",
+            "fixtures/artifacts/gt9.constraint.json",
+            "fixtures/artifacts/gt9.verify.report.v1.json",
+            "fixtures/artifacts/gt9.lock.v0.json",
+            "--out",
+            pack_dir.to_str().unwrap(),
+            "--created",
+            "2026-11-25T23:00:00Z",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "seal stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    (tmp, pack_dir)
+}
+
 #[test]
 fn golden_html_and_markdown_are_self_contained_and_redacted() {
     let (_tmp, pack_dir) = full_pack();
@@ -152,4 +178,64 @@ fn render_refuses_tampered_member_before_writing() {
     assert_eq!(refusal["outcome"], "REFUSAL");
     assert_eq!(refusal["refusal"]["code"], "E_BAD_PACK");
     assert!(!output_path.exists());
+}
+
+#[test]
+fn render_current_verify_report_and_lock_counts_in_html_and_markdown() {
+    let (_tmp, pack_dir) = current_verify_lock_pack();
+    let html_path = pack_dir.parent().unwrap().join("current.html");
+    let markdown_path = pack_dir.parent().unwrap().join("current.md");
+
+    let manifest: Value =
+        serde_json::from_str(&std::fs::read_to_string(pack_dir.join("manifest.json")).unwrap())
+            .unwrap();
+    let members = manifest["members"].as_array().unwrap();
+    let report_member = members
+        .iter()
+        .find(|member| member["path"] == "gt9.verify.report.v1.json")
+        .unwrap();
+    assert_eq!(report_member["type"], "report");
+    assert_eq!(report_member["artifact_version"], "verify.report.v1");
+    let constraint_member = members
+        .iter()
+        .find(|member| member["path"] == "gt9.constraint.json")
+        .unwrap();
+    assert_eq!(constraint_member["type"], "rules");
+    assert_eq!(
+        constraint_member["artifact_version"],
+        "verify.constraint.v1"
+    );
+
+    for (format, output_path) in [("html", &html_path), ("md", &markdown_path)] {
+        let output = pack_cmd()
+            .args([
+                "--no-witness",
+                "render",
+                pack_dir.to_str().unwrap(),
+                "--format",
+                format,
+                "--out",
+                output_path.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "render {format} stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let html = std::fs::read_to_string(&html_path).unwrap();
+    assert!(html.contains("passed <code>1</code>; failed <code>0</code>"));
+    assert!(html.contains("inputs <code>1</code>"));
+    assert!(!html.contains("passed <code>unknown</code>"));
+    assert!(!html.contains("inputs <code>unknown</code>"));
+
+    let markdown = std::fs::read_to_string(&markdown_path).unwrap();
+    assert!(markdown.contains("passed `1`; failed `0`"));
+    assert!(markdown.contains("inputs `1`"));
+    assert!(!markdown.contains("passed `unknown`"));
+    assert!(!markdown.contains("inputs `unknown`"));
 }

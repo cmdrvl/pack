@@ -92,8 +92,10 @@ fn schema_for_version(version: &str) -> Option<Validator> {
     match version {
         "lock.v0" => Some(validate_lock_v0),
         "rvl.v0" | "shape.v0" | "verify.v0" | "compare.v0" => Some(validate_report_v0),
+        "verify.report.v1" => Some(validate_verify_report_v1),
         "canon.v0" | "assess.v0" => Some(validate_artifact_v0),
         "verify.rules.v0" => Some(validate_rules_v0),
+        "verify.constraint.v1" => Some(validate_verify_constraint_v1),
         "pack.v0" => Some(validate_pack_v0),
         _ => None,
     }
@@ -122,6 +124,46 @@ fn validate_report_v0(content: &[u8]) -> Result<(), String> {
         "rvl.v0" | "shape.v0" | "verify.v0" | "compare.v0" => Ok(()),
         other => Err(format!("unexpected version \"{other}\"")),
     }
+}
+
+/// verify.report.v1: validate the stable report envelope and rule summary.
+fn validate_verify_report_v1(content: &[u8]) -> Result<(), String> {
+    let value = parse_json(content)?;
+    check_version_field(&value, "verify.report.v1")?;
+    check_string_field(&value, "tool", "verify")?;
+    check_enum_field(&value, "execution_mode", &["batch", "embedded"])?;
+    check_enum_field(&value, "outcome", &["PASS", "FAIL", "REFUSAL"])?;
+    check_nonempty_string_field(&value, "constraint_set_id")?;
+    check_prefixed_string_field(&value, "constraint_hash", "sha256:")?;
+    require_object_field(&value, "bindings")?;
+    require_object_field(&value, "summary")?;
+    require_object_field(&value, "policy_signals")?;
+    require_array_field(&value, "results")?;
+    if !value
+        .get("refusal")
+        .is_some_and(|refusal| refusal.is_null() || refusal.is_object())
+    {
+        return Err("missing or invalid \"refusal\" field".to_string());
+    }
+
+    let summary = value.get("summary").expect("checked above");
+    for field in ["total_rules", "passed_rules", "failed_rules"] {
+        if !summary.get(field).is_some_and(serde_json::Value::is_u64) {
+            return Err(format!("missing or non-integer summary.\"{field}\" field"));
+        }
+    }
+    require_object_field(summary, "by_severity")?;
+    Ok(())
+}
+
+/// verify.constraint.v1: validate the compiled constraint envelope.
+fn validate_verify_constraint_v1(content: &[u8]) -> Result<(), String> {
+    let value = parse_json(content)?;
+    check_version_field(&value, "verify.constraint.v1")?;
+    check_nonempty_string_field(&value, "constraint_set_id")?;
+    require_array_field(&value, "bindings")?;
+    require_array_field(&value, "rules")?;
+    Ok(())
 }
 
 /// Artifact types (canon.v0, assess.v0): JSON object with matching "version".
@@ -175,6 +217,78 @@ fn check_version_field(value: &serde_json::Value, expected: &str) -> Result<(), 
         return Err(format!(
             "expected version \"{expected}\", got \"{version}\""
         ));
+    }
+    Ok(())
+}
+
+fn check_string_field(
+    value: &serde_json::Value,
+    field: &str,
+    expected: &str,
+) -> Result<(), String> {
+    let actual = value
+        .get(field)
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| format!("missing string \"{field}\" field"))?;
+    if actual != expected {
+        return Err(format!(
+            "expected \"{field}\" to be \"{expected}\", got \"{actual}\""
+        ));
+    }
+    Ok(())
+}
+
+fn check_enum_field(
+    value: &serde_json::Value,
+    field: &str,
+    allowed: &[&str],
+) -> Result<(), String> {
+    let actual = value
+        .get(field)
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| format!("missing string \"{field}\" field"))?;
+    if !allowed.contains(&actual) {
+        return Err(format!("unexpected \"{field}\" value \"{actual}\""));
+    }
+    Ok(())
+}
+
+fn check_nonempty_string_field(value: &serde_json::Value, field: &str) -> Result<(), String> {
+    let actual = value
+        .get(field)
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| format!("missing string \"{field}\" field"))?;
+    if actual.is_empty() {
+        return Err(format!("\"{field}\" must not be empty"));
+    }
+    Ok(())
+}
+
+fn check_prefixed_string_field(
+    value: &serde_json::Value,
+    field: &str,
+    prefix: &str,
+) -> Result<(), String> {
+    let actual = value
+        .get(field)
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| format!("missing string \"{field}\" field"))?;
+    if !actual.starts_with(prefix) {
+        return Err(format!("\"{field}\" must start with \"{prefix}\""));
+    }
+    Ok(())
+}
+
+fn require_object_field(value: &serde_json::Value, field: &str) -> Result<(), String> {
+    if !value.get(field).is_some_and(serde_json::Value::is_object) {
+        return Err(format!("missing or non-object \"{field}\" field"));
+    }
+    Ok(())
+}
+
+fn require_array_field(value: &serde_json::Value, field: &str) -> Result<(), String> {
+    if !value.get(field).is_some_and(serde_json::Value::is_array) {
+        return Err(format!("missing or non-array \"{field}\" field"));
     }
     Ok(())
 }
@@ -250,6 +364,52 @@ mod tests {
         let (outcome, findings) = validate_schemas(&members, tmp.path());
         assert_eq!(outcome, SchemaOutcome::Pass);
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn pass_when_valid_verify_v1_report() {
+        let members = vec![member("report.json", Some("verify.report.v1"))];
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("report.json"),
+            include_str!("../../fixtures/artifacts/gt9.verify.report.v1.json"),
+        )
+        .unwrap();
+
+        let (outcome, findings) = validate_schemas(&members, tmp.path());
+        assert_eq!(outcome, SchemaOutcome::Pass);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn pass_when_valid_verify_constraint_v1() {
+        let members = vec![member("constraint.json", Some("verify.constraint.v1"))];
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("constraint.json"),
+            include_str!("../../fixtures/artifacts/gt9.constraint.json"),
+        )
+        .unwrap();
+
+        let (outcome, findings) = validate_schemas(&members, tmp.path());
+        assert_eq!(outcome, SchemaOutcome::Pass);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn fail_when_verify_v1_report_summary_is_missing() {
+        let members = vec![member("report.json", Some("verify.report.v1"))];
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("report.json"),
+            r#"{"tool":"verify","version":"verify.report.v1","execution_mode":"batch","outcome":"PASS","constraint_set_id":"test","constraint_hash":"sha256:test","bindings":{},"policy_signals":{},"results":[],"refusal":null}"#,
+        )
+        .unwrap();
+
+        let (outcome, findings) = validate_schemas(&members, tmp.path());
+        assert_eq!(outcome, SchemaOutcome::Fail);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].actual.as_ref().unwrap().contains("summary"));
     }
 
     #[test]

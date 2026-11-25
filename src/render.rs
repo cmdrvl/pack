@@ -214,6 +214,7 @@ fn is_witness_artifact(value: &Value, member: &Member) -> bool {
     let version = value.get("version").and_then(Value::as_str).unwrap_or("");
     let name = member.path.to_ascii_lowercase();
     version == "verify.v0"
+        || version == "verify.report.v1"
         || version == "benchmark.v0"
         || name.contains("verify")
         || name.contains("benchmark")
@@ -276,6 +277,7 @@ fn rvl_summary(path: &str, value: &Value) -> RvlSummary {
 }
 
 fn witness_summary(path: &str, member: &Member, value: &Value) -> WitnessSummary {
+    let version = value.get("version").and_then(Value::as_str).unwrap_or("");
     let kind = if member
         .artifact_version
         .as_deref()
@@ -286,19 +288,42 @@ fn witness_summary(path: &str, member: &Member, value: &Value) -> WitnessSummary
     } else {
         "verify"
     };
+    let (passed, failed) = if version == "verify.report.v1" {
+        let summary = value.get("summary");
+        (
+            summary
+                .and_then(|summary| summary.get("passed_rules"))
+                .and_then(Value::as_u64),
+            summary
+                .and_then(|summary| summary.get("failed_rules"))
+                .and_then(Value::as_u64),
+        )
+    } else {
+        (
+            first_u64(value, &["passed", "pass_count"]),
+            first_u64(value, &["failed", "fail_count"]),
+        )
+    };
     WitnessSummary {
         path: path.to_string(),
         kind: kind.to_string(),
         result: first_string(value, &["outcome", "status", "verdict"]),
-        passed: first_u64(value, &["passed", "pass_count"]),
-        failed: first_u64(value, &["failed", "fail_count"]),
+        passed,
+        failed,
     }
 }
 
 fn lock_summary(member: &Member, value: &Value) -> LockSummary {
-    let input_count = ["inputs", "files", "artifacts"]
-        .iter()
-        .find_map(|key| value.get(*key).and_then(Value::as_array).map(Vec::len));
+    let input_count = value
+        .get("member_count")
+        .and_then(Value::as_u64)
+        .and_then(|count| usize::try_from(count).ok())
+        .or_else(|| value.get("members").and_then(Value::as_array).map(Vec::len))
+        .or_else(|| {
+            ["inputs", "files", "artifacts"]
+                .iter()
+                .find_map(|key| value.get(*key).and_then(Value::as_array).map(Vec::len))
+        });
     LockSummary {
         path: member.path.clone(),
         bytes_hash: member.bytes_hash.clone(),
@@ -790,5 +815,33 @@ mod tests {
             boundary_value(Some(&serde_json::json!(["a", 2]))),
             Some("a, 2".to_string())
         );
+    }
+
+    #[test]
+    fn missing_verify_v1_summary_renders_unknown_not_made_up_counts() {
+        let member = Member {
+            path: "broken.verify.report.json".to_string(),
+            bytes_hash: "sha256:placeholder".to_string(),
+            member_type: "report".to_string(),
+            artifact_version: Some("verify.report.v1".to_string()),
+            profile_frozen: None,
+            profile_sha256: None,
+            column_registry_hash: None,
+        };
+        let value = serde_json::json!({
+            "version": "verify.report.v1",
+            "outcome": "PASS",
+            "passed": 99,
+            "failed": 88
+        });
+        let witness = witness_summary(&member.path, &member, &value);
+        assert_eq!(witness.passed, None);
+        assert_eq!(witness.failed, None);
+
+        let mut markdown = String::new();
+        render_witness_markdown(&mut markdown, &[witness]);
+        assert!(markdown.contains("passed `unknown`; failed `unknown`"));
+        assert!(!markdown.contains("99"));
+        assert!(!markdown.contains("88"));
     }
 }

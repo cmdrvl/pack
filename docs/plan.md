@@ -326,9 +326,9 @@ Copy rule:
 `pack` infers member type from parseable content and version markers:
 
 - `lock.v0` → `lockfile`
-- `rvl.v0`, `shape.v0`, `verify.v0`, `compare.v0` → `report`
+- `rvl.v0`, `shape.v0`, `verify.v0`, `verify.report.v1`, `compare.v0` → `report`
 - `canon.v0`, `assess.v0` → `artifact`
-- `verify.rules.v0` → `rules`
+- `verify.rules.v0`, `verify.constraint.v1` → `rules`
 - `pack.v0` → `pack`
 - YAML with `schema_version` + `profile_id` → `profile`
 - Files from materialized registry artifacts (for example `registry.json` and registry tables) → `registry`
