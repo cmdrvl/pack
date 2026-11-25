@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::Path;
 
+use crate::seal::collect::is_safe_member_path;
+
 use super::report::InvalidFinding;
 use crate::seal::manifest::Member;
 
@@ -37,6 +39,12 @@ pub fn validate_schemas(
     let mut checked = 0u32;
 
     for member in members {
+        // Path validation owns the unsafe-path refusal. Do not resolve an
+        // unsafe member against the host filesystem during schema validation.
+        if !is_safe_member_path(&member.path) {
+            continue;
+        }
+
         let version = match &member.artifact_version {
             Some(v) => v.as_str(),
             None => continue, // No artifact_version → skip

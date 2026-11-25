@@ -250,6 +250,59 @@ fn unsafe_member_path_is_invalid() {
     assert!(findings.iter().any(|f| f["code"] == "UNSAFE_MEMBER_PATH"));
 }
 
+/// Unsafe paths never resolve or hash a file outside the pack root.
+#[test]
+fn unsafe_paths_do_not_leak_outside_hashes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let outside = tmp.path().join("outside.txt");
+    std::fs::write(&outside, "outside secret").unwrap();
+    let absolute = tmp.path().join("absolute.txt");
+    std::fs::write(&absolute, "absolute secret").unwrap();
+
+    for (index, path) in [
+        "../outside.txt".to_string(),
+        absolute.to_str().unwrap().to_string(),
+        "nested/../outside.txt".to_string(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let pack_dir = tmp.path().join(format!("unsafe_pack_{index}"));
+        std::fs::create_dir(&pack_dir).unwrap();
+        let manifest = serde_json::json!({
+            "version": "pack.v0",
+            "pack_id": "sha256:fake",
+            "created": "2026-01-15T00:00:00Z",
+            "tool_version": "0.1.0",
+            "member_count": 1,
+            "members": [{
+                "path": path,
+                "bytes_hash": "sha256:0000",
+                "type": "other"
+            }]
+        });
+        std::fs::write(
+            pack_dir.join("manifest.json"),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let (report, code) = verify_json(pack_dir.to_str().unwrap());
+        assert_eq!(code, 1);
+        let findings = report["invalid"].as_array().unwrap();
+        assert!(findings
+            .iter()
+            .any(|finding| finding["code"] == "UNSAFE_MEMBER_PATH"));
+        assert!(!findings
+            .iter()
+            .any(|finding| finding["code"] == "HASH_MISMATCH"));
+        assert!(findings
+            .iter()
+            .filter(|finding| finding["code"] == "UNSAFE_MEMBER_PATH")
+            .all(|finding| finding["actual"].is_null()));
+    }
+}
+
 /// Manifest with duplicate member paths produces DUPLICATE_MEMBER_PATH.
 #[test]
 fn duplicate_member_path_is_invalid() {
@@ -393,6 +446,49 @@ fn symlink_member_is_invalid() {
     assert_eq!(code, 1);
     let findings = report["invalid"].as_array().unwrap();
     assert!(findings.iter().any(|f| f["code"] == "NON_REGULAR_MEMBER"));
+}
+
+/// Directory symlinks are classified without traversing their targets.
+#[cfg(unix)]
+#[test]
+fn directory_symlink_is_not_followed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let pack_dir = tmp.path().join("symlink_pack");
+    std::fs::create_dir(&pack_dir).unwrap();
+    let outside = tmp.path().join("outside_dir");
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::write(outside.join("secret.txt"), "outside secret").unwrap();
+
+    std::fs::write(pack_dir.join("data.json"), r#"{"version":"lock.v0"}"#).unwrap();
+    std::os::unix::fs::symlink(&outside, pack_dir.join("outside-link")).unwrap();
+
+    let manifest = serde_json::json!({
+        "version": "pack.v0",
+        "pack_id": "sha256:fake",
+        "created": "2026-01-15T00:00:00Z",
+        "tool_version": "0.1.0",
+        "member_count": 1,
+        "members": [{
+            "path": "data.json",
+            "bytes_hash": "sha256:0000",
+            "type": "other"
+        }]
+    });
+    std::fs::write(
+        pack_dir.join("manifest.json"),
+        serde_json::to_string(&manifest).unwrap(),
+    )
+    .unwrap();
+
+    let (report, code) = verify_json(pack_dir.to_str().unwrap());
+    assert_eq!(code, 1);
+    let findings = report["invalid"].as_array().unwrap();
+    assert!(findings.iter().any(|finding| {
+        finding["code"] == "NON_REGULAR_MEMBER" && finding["path"] == "outside-link"
+    }));
+    assert!(!findings.iter().any(|finding| {
+        finding["code"] == "EXTRA_MEMBER" && finding["path"] == "outside-link/secret.txt"
+    }));
 }
 
 // ---------------------------------------------------------------------------

@@ -82,32 +82,77 @@ pub fn run_checks(manifest: &Manifest, pack_dir: &Path) -> (VerifyChecks, Vec<In
 
     // Check 4: no extra files beyond manifest.json + declared members
     let mut extra_ok = true;
-    if let Ok(entries) = fs::read_dir(pack_dir) {
-        let declared: HashSet<String> = manifest.members.iter().map(|m| m.path.clone()).collect();
-
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name == "manifest.json" {
-                continue;
+    let declared: HashSet<String> = manifest.members.iter().map(|m| m.path.clone()).collect();
+    match fs::read_dir(pack_dir) {
+        Ok(entries) => {
+            for entry in entries {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(error) => {
+                        findings.push(InvalidFinding {
+                            code: "DIR_IO_ERROR".to_string(),
+                            path: Some(pack_dir.display().to_string()),
+                            expected: None,
+                            actual: Some(error.to_string()),
+                        });
+                        extra_ok = false;
+                        continue;
+                    }
+                };
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name == "manifest.json" {
+                    continue;
+                }
+                let entry_path = entry.path();
+                let metadata = match fs::symlink_metadata(&entry_path) {
+                    Ok(metadata) => metadata,
+                    Err(error) => {
+                        findings.push(InvalidFinding {
+                            code: "DIR_IO_ERROR".to_string(),
+                            path: Some(entry_path.display().to_string()),
+                            expected: None,
+                            actual: Some(error.to_string()),
+                        });
+                        extra_ok = false;
+                        continue;
+                    }
+                };
+                if metadata.is_symlink() {
+                    findings.push(InvalidFinding {
+                        code: "NON_REGULAR_MEMBER".to_string(),
+                        path: Some(name),
+                        expected: None,
+                        actual: None,
+                    });
+                    extra_ok = false;
+                } else if metadata.is_dir() {
+                    // Check recursively for declared members with dir prefixes.
+                    check_extra_recursive(
+                        &entry_path,
+                        &name,
+                        &declared,
+                        &mut findings,
+                        &mut extra_ok,
+                    );
+                } else if !declared.contains(&name) {
+                    findings.push(InvalidFinding {
+                        code: "EXTRA_MEMBER".to_string(),
+                        path: Some(name),
+                        expected: None,
+                        actual: None,
+                    });
+                    extra_ok = false;
+                }
             }
-            if entry.path().is_dir() {
-                // Check recursively for declared members with dir prefixes
-                check_extra_recursive(
-                    &entry.path(),
-                    &name,
-                    &declared,
-                    &mut findings,
-                    &mut extra_ok,
-                );
-            } else if !declared.contains(&name) {
-                findings.push(InvalidFinding {
-                    code: "EXTRA_MEMBER".to_string(),
-                    path: Some(name),
-                    expected: None,
-                    actual: None,
-                });
-                extra_ok = false;
-            }
+        }
+        Err(error) => {
+            findings.push(InvalidFinding {
+                code: "DIR_IO_ERROR".to_string(),
+                path: Some(pack_dir.display().to_string()),
+                expected: None,
+                actual: Some(error.to_string()),
+            });
+            extra_ok = false;
         }
     }
     checks.extra_members = extra_ok;
@@ -197,6 +242,15 @@ struct MemberHashResult {
 }
 
 fn check_one_member_hash(member: &Member, pack_dir: &Path) -> MemberHashResult {
+    if !is_safe_member_path(&member.path) {
+        // Check 2 already records the unsafe path. Never resolve it against the
+        // host filesystem: doing so would turn verify into a hashing oracle.
+        return MemberHashResult {
+            ok: false,
+            findings: Vec::new(),
+        };
+    }
+
     let member_path = pack_dir.join(&member.path);
 
     // Check exists.
@@ -343,8 +397,30 @@ fn check_extra_recursive(
             }
         };
         let relative = format!("{}/{}", prefix, entry.file_name().to_string_lossy());
-        if entry.path().is_dir() {
-            check_extra_recursive(&entry.path(), &relative, declared, findings, extra_ok);
+        let entry_path = entry.path();
+        let metadata = match fs::symlink_metadata(&entry_path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                findings.push(InvalidFinding {
+                    code: "DIR_IO_ERROR".to_string(),
+                    path: Some(entry_path.display().to_string()),
+                    expected: None,
+                    actual: Some(error.to_string()),
+                });
+                *extra_ok = false;
+                continue;
+            }
+        };
+        if metadata.is_symlink() {
+            findings.push(InvalidFinding {
+                code: "NON_REGULAR_MEMBER".to_string(),
+                path: Some(relative),
+                expected: None,
+                actual: None,
+            });
+            *extra_ok = false;
+        } else if metadata.is_dir() {
+            check_extra_recursive(&entry_path, &relative, declared, findings, extra_ok);
         } else if !declared.contains(&relative) {
             findings.push(InvalidFinding {
                 code: "EXTRA_MEMBER".to_string(),
