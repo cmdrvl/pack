@@ -205,6 +205,7 @@ mod tests {
 
     #[test]
     fn query_empty_ledger() {
+        let _env_lock = crate::witness::test_env_guard();
         let _tmp = setup_ledger();
         let result = execute_query(&WitnessFilters::default(), false);
         assert_eq!(result, "No witness records found.");
@@ -215,6 +216,7 @@ mod tests {
 
     #[test]
     fn query_returns_records() {
+        let _env_lock = crate::witness::test_env_guard();
         let _tmp = setup_ledger();
         let r = WitnessRecord::new(
             "seal",
@@ -243,6 +245,7 @@ mod tests {
 
     #[test]
     fn last_returns_most_recent() {
+        let _env_lock = crate::witness::test_env_guard();
         let _tmp = setup_ledger();
         let r1 = WitnessRecord::new(
             "seal",
@@ -277,6 +280,7 @@ mod tests {
 
     #[test]
     fn last_empty_ledger() {
+        let _env_lock = crate::witness::test_env_guard();
         let _tmp = setup_ledger();
         let result = execute_last(false);
         assert_eq!(result, "No witness records found.");
@@ -287,6 +291,7 @@ mod tests {
 
     #[test]
     fn count_returns_correct_number() {
+        let _env_lock = crate::witness::test_env_guard();
         let _tmp = setup_ledger();
         let r1 = WitnessRecord::new(
             "seal",
@@ -320,6 +325,7 @@ mod tests {
 
     #[test]
     fn count_empty_ledger() {
+        let _env_lock = crate::witness::test_env_guard();
         let _tmp = setup_ledger();
         let result = execute_count(&WitnessFilters::default(), false);
         assert_eq!(result, "0 witness record(s)");
@@ -328,6 +334,7 @@ mod tests {
 
     #[test]
     fn query_filters_default_to_pack_and_can_target_other_tools() {
+        let _env_lock = crate::witness::test_env_guard();
         let _tmp = setup_ledger();
         let ledger_path = witness_ledger_path();
         std::fs::write(
@@ -361,6 +368,7 @@ mod tests {
 
     #[test]
     fn query_filters_by_bounds_outcome_and_input_hash() {
+        let _env_lock = crate::witness::test_env_guard();
         let _tmp = setup_ledger();
         let mut late = WitnessRecord::new(
             "seal",
@@ -413,6 +421,7 @@ mod tests {
 
     #[test]
     fn legacy_pack_lines_remain_queryable() {
+        let _env_lock = crate::witness::test_env_guard();
         let _tmp = setup_ledger();
         let ledger_path = witness_ledger_path();
         std::fs::write(

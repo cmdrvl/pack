@@ -52,6 +52,7 @@ mod tests {
 
     #[test]
     fn append_creates_file_and_writes_record() {
+        let _env_lock = crate::witness::test_env_guard();
         let tmp = TempDir::new().unwrap();
         let ledger_path = tmp.path().join("witness.jsonl");
 
@@ -85,6 +86,7 @@ mod tests {
 
     #[test]
     fn append_is_additive() {
+        let _env_lock = crate::witness::test_env_guard();
         let tmp = TempDir::new().unwrap();
         let ledger_path = tmp.path().join("witness.jsonl");
         std::env::set_var("EPISTEMIC_WITNESS", ledger_path.display().to_string());

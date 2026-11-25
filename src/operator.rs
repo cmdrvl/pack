@@ -35,7 +35,7 @@ mod tests {
         assert_eq!(op["name"], "pack");
         assert_eq!(op["schema_version"], "operator.v1");
         assert_eq!(op["invocation"]["output_mode"], "mixed");
-        assert_eq!(op["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(op["tool_version"], env!("CARGO_PKG_VERSION"));
     }
 
     #[test]
@@ -75,32 +75,36 @@ mod tests {
     fn operator_manifest_has_exit_codes() {
         let op = operator_json();
 
-        let seal = &subcommand(&op, "seal")["exit_codes"];
-        assert_eq!(seal["0"]["meaning"], "PACK_CREATED");
-        assert_eq!(seal["2"]["meaning"], "REFUSAL");
-
-        let verify = &subcommand(&op, "verify")["exit_codes"];
-        assert_eq!(verify["0"]["meaning"], "OK");
-        assert_eq!(verify["1"]["meaning"], "INVALID");
-        assert_eq!(verify["2"]["meaning"], "REFUSAL");
-
-        let diff = subcommand(&op, "diff");
-        assert_eq!(diff["status"], "implemented");
-        assert_eq!(diff["exit_codes"]["0"]["meaning"], "NO_CHANGES");
-        assert_eq!(diff["exit_codes"]["1"]["meaning"], "CHANGES");
-
-        let inspect = subcommand(&op, "inspect");
-        assert_eq!(inspect["status"], "implemented");
-        assert_eq!(inspect["witness"], "not_recorded");
-        assert_eq!(inspect["exit_codes"]["0"]["meaning"], "METADATA");
-
-        let archive = subcommand(&op, "archive");
-        assert_eq!(archive["status"], "implemented");
-        assert_eq!(archive["witness"], "not_recorded");
+        let exit_codes = op["exit_codes"]
+            .as_object()
+            .expect("operator exit_codes must be an object");
+        assert_eq!(exit_codes.len(), 3, "pack must declare the v1 exit trinity");
         assert_eq!(
-            archive["exit_codes"]["0"]["meaning"],
-            "ARCHIVE_CREATED or ARCHIVE_IMPORTED"
+            exit_codes["0"]["meaning"],
+            "successful seal, valid verify, no-change diff, or healthy doctor"
         );
+        assert_eq!(exit_codes["0"]["domain"], "positive");
+        assert_eq!(
+            exit_codes["1"]["meaning"],
+            "invalid verify, changed diff, or unhealthy doctor"
+        );
+        assert_eq!(exit_codes["1"]["domain"], "negative");
+        assert_eq!(exit_codes["2"]["meaning"], "refusal or command-line error");
+        assert_eq!(exit_codes["2"]["domain"], "error");
+        for (code, entry) in exit_codes {
+            assert!(
+                entry["meaning"]
+                    .as_str()
+                    .is_some_and(|meaning| !meaning.is_empty()),
+                "exit code {code} must declare a non-empty v1 meaning"
+            );
+            assert!(
+                entry["domain"]
+                    .as_str()
+                    .is_some_and(|domain| !domain.is_empty()),
+                "exit code {code} must declare a non-empty v1 domain"
+            );
+        }
 
         let doctor = subcommand(&op, "doctor");
         assert_eq!(doctor["status"], "implemented");
