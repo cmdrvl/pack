@@ -220,6 +220,63 @@ fn archive_export_import_cli_round_trip() {
 }
 
 #[test]
+fn bare_relative_output_names_work_for_seal_export_and_import() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("data.json"),
+        r#"{"version":"lock.v0","rows":5}"#,
+    )
+    .unwrap();
+
+    let seal = pack_cmd()
+        .current_dir(tmp.path())
+        .args([
+            "--no-witness",
+            "seal",
+            "data.json",
+            "--out",
+            "my-pack",
+            "--created",
+            "2026-01-15T10:30:00Z",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        seal.status.success(),
+        "seal stdout={} stderr={}",
+        String::from_utf8_lossy(&seal.stdout),
+        String::from_utf8_lossy(&seal.stderr)
+    );
+
+    let export = pack_cmd()
+        .current_dir(tmp.path())
+        .args(["archive", "export", "my-pack", "--out", "out.tar"])
+        .output()
+        .unwrap();
+    assert!(
+        export.status.success(),
+        "export stdout={} stderr={}",
+        String::from_utf8_lossy(&export.stdout),
+        String::from_utf8_lossy(&export.stderr)
+    );
+
+    let import = pack_cmd()
+        .current_dir(tmp.path())
+        .args(["archive", "import", "out.tar", "--out", "imported-pack"])
+        .output()
+        .unwrap();
+    assert!(
+        import.status.success(),
+        "import stdout={} stderr={}",
+        String::from_utf8_lossy(&import.stdout),
+        String::from_utf8_lossy(&import.stderr)
+    );
+    assert!(tmp.path().join("my-pack").is_dir());
+    assert!(tmp.path().join("out.tar").is_file());
+    assert!(tmp.path().join("imported-pack").is_dir());
+}
+
+#[test]
 fn witness_last_exits_0() {
     let output = pack_cmd().args(["witness", "last"]).output().unwrap();
     assert!(output.status.success());

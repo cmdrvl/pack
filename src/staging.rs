@@ -6,10 +6,10 @@ use tempfile::TempDir;
 use crate::refusal::{RefusalCode, RefusalEnvelope};
 
 pub(crate) fn output_parent(final_dir: &Path) -> PathBuf {
-    final_dir
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .to_path_buf()
+    match final_dir.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        _ => Path::new(".").to_path_buf(),
+    }
 }
 
 pub(crate) fn ensure_parent_exists(parent: &Path) -> Result<(), Box<RefusalEnvelope>> {
@@ -118,6 +118,11 @@ fn is_empty_directory(path: &Path) -> Result<bool, Box<RefusalEnvelope>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bare_relative_output_uses_current_directory_as_parent() {
+        assert_eq!(output_parent(Path::new("my-pack")), PathBuf::from("."));
+    }
 
     #[test]
     fn promotes_staging_to_new_output_dir() {
