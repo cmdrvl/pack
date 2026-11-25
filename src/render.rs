@@ -97,19 +97,19 @@ pub fn execute_render(
     pack_dir: &Path,
     format: RenderFormat,
     output: &Path,
-) -> Result<RenderResult, RefusalEnvelope> {
+) -> Result<RenderResult, Box<RefusalEnvelope>> {
     let (verify_output, verify_code) = execute_verify(pack_dir, true);
     if verify_code != 0 {
         let report = serde_json::from_str::<Value>(&verify_output)
             .unwrap_or_else(|_| Value::String(verify_output.clone()));
-        return Err(RefusalEnvelope::new(
+        return Err(Box::new(RefusalEnvelope::new(
             RefusalCode::BadPack,
             Some("Cannot render an unverified pack".to_string()),
             Some(serde_json::json!({
                 "verify_exit_code": verify_code,
                 "verify_report": report,
             })),
-        ));
+        )));
     }
 
     let manifest_path = pack_dir.join("manifest.json");
@@ -147,7 +147,7 @@ pub fn execute_render(
     })
 }
 
-fn build_dossier(pack_dir: &Path, manifest: Manifest) -> Result<Dossier, RefusalEnvelope> {
+fn build_dossier(pack_dir: &Path, manifest: Manifest) -> Result<Dossier, Box<RefusalEnvelope>> {
     let mut members = Vec::with_capacity(manifest.members.len());
     let mut assess = Vec::new();
     let mut rvl = Vec::new();
@@ -762,8 +762,12 @@ fn html_text(value: &str) -> String {
         .replace('\'', "&#39;")
 }
 
-fn io_refusal(message: &str, detail: Value) -> RefusalEnvelope {
-    RefusalEnvelope::new(RefusalCode::Io, Some(message.to_string()), Some(detail))
+fn io_refusal(message: &str, detail: Value) -> Box<RefusalEnvelope> {
+    Box::new(RefusalEnvelope::new(
+        RefusalCode::Io,
+        Some(message.to_string()),
+        Some(detail),
+    ))
 }
 
 #[cfg(test)]

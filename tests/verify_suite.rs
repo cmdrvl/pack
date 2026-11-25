@@ -156,7 +156,7 @@ fn unreadable_member_is_io_refusal() {
 
     let member = pack_dir.join("unknown.txt");
     let mut permissions = std::fs::metadata(&member).unwrap().permissions();
-    permissions.set_mode(0);
+    permissions.set_mode(0o0);
     std::fs::set_permissions(&member, permissions).unwrap();
 
     let (report, code) = verify_json(pack_dir.to_str().unwrap());
@@ -196,7 +196,7 @@ fn unreadable_extra_directory_is_io_refusal() {
     let unreadable = pack_dir.join("unreadable-extra");
     std::fs::create_dir(&unreadable).unwrap();
     let mut permissions = std::fs::metadata(&unreadable).unwrap().permissions();
-    permissions.set_mode(0);
+    permissions.set_mode(0o0);
     std::fs::set_permissions(&unreadable, permissions).unwrap();
 
     let (report, code) = verify_json(pack_dir.to_str().unwrap());
