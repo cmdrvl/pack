@@ -49,7 +49,7 @@ fn describe_lists_seal_outcome_option() {
     let output = pack_cmd().arg("--describe").output().unwrap();
     assert!(output.status.success());
     let op: Value = serde_json::from_slice(&output.stdout).unwrap();
-    let seal = op["subcommands"]
+    let seal = op["commands"]
         .as_array()
         .unwrap()
         .iter()

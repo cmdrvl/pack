@@ -12,9 +12,9 @@ mod tests {
     use super::*;
 
     fn subcommand<'a>(op: &'a Value, name: &str) -> &'a Value {
-        op["subcommands"]
+        op["commands"]
             .as_array()
-            .expect("operator subcommands must be an array")
+            .expect("operator commands must be an array")
             .iter()
             .find(|subcommand| subcommand["name"] == name)
             .expect("missing operator subcommand")
@@ -33,7 +33,7 @@ mod tests {
     fn operator_manifest_has_required_fields() {
         let op = operator_json();
         assert_eq!(op["name"], "pack");
-        assert_eq!(op["schema_version"], "operator.v0");
+        assert_eq!(op["schema_version"], "operator.v1");
         assert_eq!(op["invocation"]["output_mode"], "mixed");
         assert_eq!(op["version"], env!("CARGO_PKG_VERSION"));
     }

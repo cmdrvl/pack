@@ -14,154 +14,138 @@ fn isolated_pack_cmd(tmp: &tempfile::TempDir) -> Command {
     command
 }
 
-#[test]
-fn doctor_health_json_exits_zero_without_writing_witness() {
-    let tmp = tempfile::tempdir().unwrap();
-    let output = isolated_pack_cmd(&tmp)
-        .args(["doctor", "health", "--json"])
+fn doctor_report(tmp: &tempfile::TempDir, args: &[&str], mode: &str) -> Value {
+    let output = isolated_pack_cmd(tmp)
+        .args(args)
         .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
+        .expect("doctor command should run");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(output.stderr.is_empty());
-    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(payload["schema_version"], "pack.doctor.health.v1");
-    assert_eq!(payload["contract"], "cmdrvl.read_only_doctor.v1");
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("doctor stdout is JSON");
+    assert_eq!(payload["schema_version"], "cmdrvl.doctor.v1");
+    assert_eq!(payload["mode"], mode);
     assert_eq!(payload["tool"], "pack");
-    assert_eq!(payload["ok"], true);
-    assert_eq!(payload["read_only"], true);
-    assert_eq!(payload["summary"]["error"], 0);
+    assert_eq!(payload["tool_version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(payload["healthy"], true);
+    assert!(payload["findings"].is_array());
     assert!(!tmp.path().join("witness.jsonl").exists());
+    payload
 }
 
 #[test]
-fn doctor_capabilities_json_advertises_no_fixers_or_side_effects() {
+fn doctor_health_uses_family_schema_and_is_read_only() {
     let tmp = tempfile::tempdir().unwrap();
-    let output = isolated_pack_cmd(&tmp)
-        .args(["doctor", "capabilities", "--json"])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(payload["schema_version"], "pack.doctor.capabilities.v1");
-    assert_eq!(payload["read_only"], true);
-    assert_eq!(payload["fix_mode"]["status"], "not_available");
-    assert_eq!(payload["fix_mode"]["available"], false);
-    assert_eq!(payload["fixers"].as_array().unwrap().len(), 0);
-    assert_eq!(payload["network"]["used"], false);
-    assert_eq!(payload["network"]["config_env_read"], false);
-    assert_eq!(
-        payload["agent_surfaces"]["capabilities"]["command"],
-        "pack capabilities --json"
-    );
-    assert_eq!(
-        payload["agent_surfaces"]["robot_docs"]["command"],
-        "pack robot-docs guide"
-    );
-    assert_eq!(
-        payload["side_effects"]["by_command"]["pack capabilities --json"]["writes_witness_ledger"],
-        false
-    );
-
-    let side_effects = payload["side_effects"].as_object().unwrap();
-    assert!(!side_effects.is_empty());
-    for value in side_effects.values().filter(|value| value.is_boolean()) {
-        assert_eq!(value, false);
-    }
+    let payload = doctor_report(&tmp, &["doctor", "--json"], "health");
+    assert_eq!(payload["findings"].as_array().map(Vec::len), Some(5));
 }
 
 #[test]
-fn doctor_robot_triage_json_is_machine_readable() {
+fn legacy_doctor_health_alias_remains_supported() {
     let tmp = tempfile::tempdir().unwrap();
-    let output = isolated_pack_cmd(&tmp)
-        .args(["doctor", "--robot-triage"])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(payload["schema_version"], "pack.doctor.triage.v1");
-    assert_eq!(payload["contract"], "cmdrvl.read_only_doctor.v1");
-    assert_eq!(payload["ok"], true);
-    assert_eq!(payload["health"]["schema_version"], "pack.doctor.health.v1");
-    assert_eq!(
-        payload["capabilities"]["schema_version"],
-        "pack.doctor.capabilities.v1"
-    );
+    doctor_report(&tmp, &["doctor", "health", "--json"], "health");
 }
 
 #[test]
-fn top_level_robot_triage_json_is_machine_readable() {
+fn doctor_capabilities_embeds_the_exact_operator_contract() {
     let tmp = tempfile::tempdir().unwrap();
-    let output = isolated_pack_cmd(&tmp)
-        .arg("--robot-triage")
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-    assert!(!tmp.path().join("witness.jsonl").exists());
-    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(payload["schema_version"], "pack.doctor.triage.v1");
-    assert_eq!(payload["ok"], true);
-    assert_eq!(
-        payload["capabilities"]["agent_surfaces"]["robot_triage"]["command"],
-        "pack --robot-triage"
-    );
-}
-
-#[test]
-fn top_level_capabilities_json_advertises_agent_surfaces() {
-    let tmp = tempfile::tempdir().unwrap();
-    let output = isolated_pack_cmd(&tmp)
+    let doctor = doctor_report(&tmp, &["doctor", "capabilities", "--json"], "capabilities");
+    let capabilities_output = isolated_pack_cmd(&tmp)
         .args(["capabilities", "--json"])
         .output()
         .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(payload["schema_version"], "pack.doctor.capabilities.v1");
-    assert_eq!(payload["read_only"], true);
-    assert_eq!(
-        payload["agent_surfaces"]["capabilities"]["command"],
-        "pack capabilities --json"
-    );
-    assert_eq!(
-        payload["agent_surfaces"]["robot_docs"]["command"],
-        "pack robot-docs guide"
-    );
-    assert_eq!(payload["composition"]["family"]["name"], "cmdrvl-spine");
-    assert_eq!(payload["composition"]["position"], 5);
-    assert_eq!(payload["composition"]["produces"][0], "pack.v0 directory");
-    assert!(payload["composition"]["accepts"]
-        .as_array()
-        .is_some_and(|values| values.iter().any(|value| value == "lock.v0 JSON")));
-    assert_eq!(
-        payload["side_effects"]["by_command"]["pack capabilities --json"]["uses_network"],
-        false
-    );
+    let capabilities: Value = serde_json::from_slice(&capabilities_output.stdout).unwrap();
+    assert_eq!(doctor["contract"], capabilities);
+    assert_eq!(capabilities["schema_version"], "operator.v1");
 }
 
 #[test]
-fn top_level_robot_docs_guide_names_agent_surface() {
+fn doctor_triage_has_next_actions_and_legacy_alias_works() {
     let tmp = tempfile::tempdir().unwrap();
-    let output = isolated_pack_cmd(&tmp)
-        .args(["robot-docs", "guide"])
+    let triage = doctor_report(&tmp, &["doctor", "triage", "--json"], "triage");
+    assert!(triage["next_actions"].as_array().is_some_and(|actions| {
+        actions
+            .iter()
+            .any(|action| action == "pack capabilities --json")
+    }));
+
+    let legacy = doctor_report(&tmp, &["doctor", "--robot-triage"], "triage");
+    assert_eq!(legacy["next_actions"], triage["next_actions"]);
+}
+
+#[test]
+fn top_level_capabilities_matches_describe() {
+    let tmp = tempfile::tempdir().unwrap();
+    let describe = isolated_pack_cmd(&tmp).arg("--describe").output().unwrap();
+    let capabilities = isolated_pack_cmd(&tmp)
+        .args(["capabilities", "--json"])
         .output()
         .unwrap();
+    let describe_json: Value = serde_json::from_slice(&describe.stdout).unwrap();
+    let capabilities_json: Value = serde_json::from_slice(&capabilities.stdout).unwrap();
+    assert_eq!(describe_json, capabilities_json);
+}
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("pack --robot-triage"));
-    assert!(stdout.contains("pack capabilities --json"));
-    assert!(stdout.contains("pack robot-docs guide"));
-    assert!(stdout.contains("Composition:"));
-    assert!(stdout.contains("vacuum --json <ROOT>... | hashbytes | fingerprint --fp <ID>"));
-    assert!(stdout.contains("pack seal dataset.lock.json shape.report.json rvl.report.json"));
-    assert!(stdout.contains("pack doctor --fix` is unavailable"));
+#[test]
+fn seal_accepts_canonical_out_alias_and_keeps_output_compatibility() {
+    let tmp = tempfile::tempdir().unwrap();
+    let artifact = tmp.path().join("artifact.json");
+    std::fs::write(&artifact, r#"{"version":"lock.v0","rows":1}"#).unwrap();
+    let pack_dir = tmp.path().join("sealed");
+    let output = isolated_pack_cmd(&tmp)
+        .args([
+            "--no-witness",
+            "seal",
+            artifact.to_str().unwrap(),
+            "--out",
+            pack_dir.to_str().unwrap(),
+            "--created",
+            "2026-01-15T10:30:00Z",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(pack_dir.join("manifest.json").exists());
+
+    let compatibility_dir = tmp.path().join("compat");
+    let compatibility = isolated_pack_cmd(&tmp)
+        .args([
+            "--no-witness",
+            "seal",
+            artifact.to_str().unwrap(),
+            "--output",
+            compatibility_dir.to_str().unwrap(),
+            "--created",
+            "2026-01-15T10:30:00Z",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(compatibility.status.code(), Some(0));
+}
+
+#[test]
+fn no_color_and_non_tty_help_are_ansi_free() {
+    for no_color in [true, false] {
+        let mut command = pack_cmd();
+        command.arg("--help");
+        if no_color {
+            command.env("NO_COLOR", "1").env("TERM", "dumb");
+        } else {
+            command.env_remove("NO_COLOR").env_remove("TERM");
+        }
+        let output = command.output().unwrap();
+        assert!(!output.stdout.contains(&0x1b), "help stdout contained ANSI");
+        assert!(!output.stderr.contains(&0x1b), "help stderr contained ANSI");
+    }
 }
 
 #[test]
@@ -171,13 +155,9 @@ fn doctor_fix_is_not_available() {
         .args(["doctor", "--fix"])
         .output()
         .unwrap();
-
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("pack doctor --fix is unavailable"));
-    assert!(stderr.contains("pack --robot-triage"));
-    assert!(stderr.contains("pack capabilities --json"));
-    assert!(stderr.contains("pack robot-docs guide"));
     assert!(!tmp.path().join("witness.jsonl").exists());
 }

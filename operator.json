@@ -1,202 +1,100 @@
 {
-  "schema_version": "operator.v0",
+  "schema_version": "operator.v1",
   "name": "pack",
   "version": "0.6.0",
-  "description": "Standalone sealing entrypoint for lockfiles, reports, rules, registry artifacts, and profile identity",
+  "contract_version": "1.0.0",
+  "description": "Seal lockfiles, reports, rules, registry artifacts, and profile identity into immutable evidence packs",
   "repository": "https://github.com/cmdrvl/pack",
   "license": "MIT",
   "agent_guide": "https://github.com/cmdrvl/.github/blob/main/profile/AGENT_PROMPT.md",
-
   "invocation": {
     "binary": "pack",
     "usage": [
-      "pack seal <LOCKFILE> [<ARTIFACTS>...] [--output <DIR>] [--note <TEXT>] [--created <RFC3339>] [--outcome <TAG>] [--no-witness]",
-      "pack verify <PACK_DIR> [--json] [--no-witness]",
-      "pack inspect <PACK_DIR> [--json]",
-      "pack diff <PACK_A> <PACK_B> [--json]",
-      "pack archive export <PACK_DIR> --out <FILE>",
-      "pack archive import <ARCHIVE> --out <DIR>",
-      "pack witness <query|last|count> [OPTIONS]",
-      "pack --robot-triage",
+      "pack seal <ARTIFACT>... --out <DIR>",
+      "pack verify <PACK_DIR> --json",
       "pack capabilities --json",
-      "pack robot-docs guide",
-      "pack doctor health [--json]",
-      "pack doctor capabilities --json",
-      "pack doctor robot-docs",
-      "pack doctor --robot-triage",
-      "pack doctor --fix"
+      "pack doctor --json"
     ],
     "output_mode": "mixed",
     "output_schema": "pack.v0",
     "json_flag": "--json"
   },
-
   "arguments": [],
-
-  "manifest_member_fields": [
-    "path",
-    "bytes_hash",
-    "type",
-    "artifact_version",
-    "profile_frozen",
-    "profile_sha256",
-    "column_registry_hash"
-  ],
-
   "options": [
-    { "name": "no_witness", "flag": "--no-witness", "type": "flag", "description": "Suppress witness ledger recording" },
-    { "name": "describe", "flag": "--describe", "type": "flag", "description": "Print compiled operator.json and exit 0" },
-    { "name": "schema", "flag": "--schema", "type": "flag", "description": "Print pack.v0 JSON Schema and exit 0" },
-    { "name": "robot_triage", "flag": "--robot-triage", "type": "flag", "description": "Emit read-only machine triage JSON and exit 0" },
-    { "name": "version", "flag": "--version", "type": "flag", "description": "Print version and exit 0" }
+    { "name": "out", "flag": "--out", "aliases": ["--output"], "type": "path", "scope": "seal", "description": "Output directory; --output is a compatibility alias" },
+    { "name": "json", "flag": "--json", "type": "boolean", "description": "Emit machine-readable output where supported" },
+    { "name": "no-witness", "flag": "--no-witness", "type": "boolean", "description": "Suppress witness ledger recording" },
+    { "name": "describe", "flag": "--describe", "type": "boolean", "description": "Print the operator.v1 contract and exit" },
+    { "name": "schema", "flag": "--schema", "type": "boolean", "description": "Print pack.v0 JSON Schema and exit" },
+    { "name": "robot-triage", "flag": "--robot-triage", "type": "boolean", "description": "Legacy alias for doctor triage" },
+    { "name": "version", "flag": "--version", "type": "boolean", "description": "Print version and exit" }
   ],
-
-  "subcommands": [
+  "commands": [
     {
       "name": "seal",
-      "description": "Standalone sealing interface for artifacts already on disk",
+      "description": "Seal artifacts into an immutable evidence pack directory",
       "options": [
-        { "name": "output", "flag": "--output", "type": "path", "description": "Output directory; defaults to ~/.cmdrvl/state/pack/<pack_id>/" },
-        { "name": "note", "flag": "--note", "type": "string", "description": "Optional annotation embedded in manifest" },
-        { "name": "created", "flag": "--created", "type": "RFC3339", "description": "Reproducible manifest creation timestamp; takes precedence over SOURCE_DATE_EPOCH" },
-        { "name": "outcome", "flag": "--outcome", "type": "string", "description": "Optional canonical outcome anchor (cmdrvl://...) embedded in manifest and pack_id" }
+        { "name": "out", "flag": "--out", "aliases": ["--output"], "type": "path" },
+        { "name": "note", "flag": "--note", "type": "string" },
+        { "name": "created", "flag": "--created", "type": "RFC3339" },
+        { "name": "outcome", "flag": "--outcome", "type": "string" }
       ],
-      "exit_codes": {
-        "0": { "meaning": "PACK_CREATED", "domain": "positive" },
-        "2": { "meaning": "REFUSAL", "domain": "error" }
-      }
+      "refusals": [
+        { "code": "E_EMPTY" },
+        { "code": "E_IO" },
+        { "code": "E_DUPLICATE" }
+      ]
     },
-    {
-      "name": "verify",
-      "description": "Verify pack integrity (members + pack_id)",
-      "exit_codes": {
-        "0": { "meaning": "OK", "domain": "positive" },
-        "1": { "meaning": "INVALID", "domain": "negative" },
-        "2": { "meaning": "REFUSAL", "domain": "error" }
-      }
-    },
-    {
-      "name": "inspect",
-      "description": "Read pack metadata without verifying integrity",
-      "status": "implemented",
-      "witness": "not_recorded",
-      "exit_codes": {
-        "0": { "meaning": "METADATA", "domain": "positive" },
-        "2": { "meaning": "REFUSAL", "domain": "error" }
-      }
-    },
-    {
-      "name": "diff",
-      "description": "Deterministically diff two packs",
-      "status": "implemented",
-      "exit_codes": {
-        "0": { "meaning": "NO_CHANGES", "domain": "positive" },
-        "1": { "meaning": "CHANGES", "domain": "negative" },
-        "2": { "meaning": "REFUSAL", "domain": "error" }
-      }
-    },
-    {
-      "name": "archive",
-      "description": "Export/import deterministic tar wrappers around canonical pack directories",
-      "status": "implemented",
-      "witness": "not_recorded",
-      "exit_codes": {
-        "0": { "meaning": "ARCHIVE_CREATED or ARCHIVE_IMPORTED", "domain": "positive" },
-        "2": { "meaning": "REFUSAL", "domain": "error" }
-      }
-    },
-    {
-      "name": "witness",
-      "description": "Query witness ledger",
-      "exit_codes": {
-        "0": { "meaning": "OK", "domain": "positive" },
-        "2": { "meaning": "REFUSAL", "domain": "error" }
-      }
-    },
-    {
-      "name": "capabilities",
-      "description": "Read-only machine-readable agent capability contract",
-      "status": "implemented",
-      "read_only": true,
-      "witness": "not_recorded",
-      "commands": [
-        "pack capabilities --json"
-      ],
-      "exit_codes": {
-        "0": { "meaning": "CAPABILITIES", "domain": "positive" }
-      }
-    },
-    {
-      "name": "robot-docs",
-      "description": "Read-only agent operating guide",
-      "status": "implemented",
-      "read_only": true,
-      "witness": "not_recorded",
-      "commands": [
-        "pack robot-docs guide"
-      ],
-      "exit_codes": {
-        "0": { "meaning": "ROBOT_DOCS", "domain": "positive" }
-      }
-    },
+    { "name": "verify", "description": "Verify pack integrity and schema eligibility", "status": "implemented" },
+    { "name": "inspect", "description": "Read pack metadata without verifying integrity", "status": "implemented", "witness": "not_recorded" },
+    { "name": "diff", "description": "Deterministically diff two packs", "status": "implemented" },
+    { "name": "archive", "description": "Export or import deterministic tar wrappers", "status": "implemented", "witness": "not_recorded" },
+    { "name": "witness", "description": "Query the witness ledger" },
+    { "name": "capabilities", "description": "Print the same operator.v1 contract as --describe", "read_only": true, "commands": ["pack capabilities --json"] },
+    { "name": "robot-docs", "description": "Print paste-ready operating notes for agents", "read_only": true, "commands": ["pack robot-docs guide"] },
     {
       "name": "doctor",
-      "description": "Read-only diagnostics for agents and operators",
-      "status": "implemented",
+      "description": "Read-only health, capabilities, and triage diagnostics",
+      "aliases": ["doctor health", "doctor --robot-triage"],
       "read_only": true,
+      "status": "implemented",
       "witness": "not_recorded",
-      "fix_mode": "not_available",
-      "commands": [
-        "pack doctor health",
-        "pack doctor health --json",
-        "pack doctor capabilities --json",
-        "pack doctor robot-docs",
-        "pack doctor --robot-triage",
-        "pack doctor --fix"
-      ],
-      "side_effects": {
-        "reads_pack_inputs": false,
-        "reads_pack_members": false,
-        "walks_pack_dirs": false,
-        "seals_packs": false,
-        "verifies_pack_integrity": false,
-        "diffs_pack_dirs": false,
-        "exports_archives": false,
-        "imports_archives": false,
-        "writes_witness_ledger": false,
-        "creates_witness_directory": false,
-        "writes_doctor_artifacts": false,
-        "rewrites_operator_manifest": false,
-        "rewrites_schema": false,
-        "uses_network": false
-      },
-      "exit_codes": {
-        "0": { "meaning": "DOCTOR_OK", "domain": "positive" },
-        "2": { "meaning": "CLI_USAGE", "domain": "error" }
-      }
+      "fix_mode": "not_available"
     }
   ],
-
   "exit_codes": {
-    "0": { "meaning": "SUCCESS", "domain": "positive" },
-    "1": { "meaning": "INVALID or CHANGES", "domain": "negative" },
-    "2": { "meaning": "REFUSAL", "domain": "error" }
+    "0": { "meaning": "successful seal, valid verify, no-change diff, or healthy doctor", "domain": "positive" },
+    "1": { "meaning": "invalid verify, changed diff, or unhealthy doctor", "domain": "negative" },
+    "2": { "meaning": "refusal or command-line error", "domain": "error" }
   },
-
   "refusals": [
     { "code": "E_EMPTY", "message": "Seal called with no artifacts", "action": "escalate" },
     { "code": "E_IO", "message": "Cannot read input, write output, or read pack directory", "action": "escalate" },
-    { "code": "E_DUPLICATE", "message": "Member path collision during seal (including reserved paths)", "action": "escalate" },
-    { "code": "E_BAD_PACK", "message": "Missing or invalid manifest.json for verify/diff/archive", "action": "escalate" }
+    { "code": "E_DUPLICATE", "message": "Member path collision during seal", "action": "escalate" },
+    { "code": "E_BAD_PACK", "message": "Missing or invalid manifest.json", "action": "escalate" }
   ],
-
+  "env_vars": [
+    { "name": "EPISTEMIC_WITNESS", "description": "Optional witness ledger path" },
+    { "name": "NO_COLOR", "description": "Disable ANSI terminal styling" },
+    { "name": "TERM", "description": "Terminal capability hint" },
+    { "name": "SOURCE_DATE_EPOCH", "description": "Deterministic seal creation timestamp" }
+  ],
+  "formats": ["pack.v0 JSON", "pack.v0 directory", "operator.v1 JSON", "cmdrvl.doctor.v1 JSON"],
+  "side_effects": {
+    "reads_files": true,
+    "writes_files": true,
+    "network": false,
+    "writes_witness": true,
+    "notes": "Seal and archive import write artifacts; doctor and introspection commands are read-only."
+  },
+  "manifest_member_fields": ["path", "bytes_hash", "type", "artifact_version", "profile_frozen", "profile_sha256", "column_registry_hash"],
   "capabilities": {
-    "formats": ["*"],
+    "formats": ["pack.v0", "json"],
     "profile_aware": true,
     "profile_identity": {
-      "member_type_predicate": "YAML with schema_version plus profile_id remains type=profile for drafts and frozen profiles",
+      "member_type_predicate": "YAML with schema_version plus profile_id remains type=profile",
       "frozen_predicate": "status: frozen plus profile_sha256",
-      "registry_hash_policy": "copy declared column_registry_hash when present on a frozen profile; pack does not read registry directories",
+      "registry_hash_policy": "copy declared column_registry_hash when present",
       "artifact_version_policy": "profile schema_version is not emitted as artifact_version"
     },
     "streaming": false,
@@ -204,19 +102,8 @@
       "ambient_recording": "enabled_by_default",
       "query_subcommands": true,
       "no_witness_flag": "suppresses_recording"
-    },
-    "doctor": {
-      "read_only": true,
-      "robot_triage": true,
-      "top_level_surfaces": [
-        "pack --robot-triage",
-        "pack capabilities --json",
-        "pack robot-docs guide"
-      ],
-      "fix_mode": "not_available"
     }
   },
-
   "pipeline": {
     "upstream": ["lock", "canon", "rvl"],
     "downstream": []

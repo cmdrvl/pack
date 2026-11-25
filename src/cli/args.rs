@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, ColorChoice, Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -8,6 +8,7 @@ use std::path::PathBuf;
     version,
     override_usage = "pack [OPTIONS] <COMMAND>\n       pack --robot-triage\n       pack capabilities --json\n       pack robot-docs guide\n       pack seal <ARTIFACT>... [OPTIONS]\n       pack verify <PACK_DIR> [OPTIONS]\n       pack inspect <PACK_DIR> [OPTIONS]\n       pack diff <A> <B> [OPTIONS]\n       pack archive <export|import> ...\n       pack witness <query|last|count> [OPTIONS]\n       pack doctor <health|capabilities|robot-docs> [OPTIONS]"
 )]
+#[command(color = ColorChoice::Never)]
 pub struct Cli {
     /// Print compiled operator.json and exit.
     #[arg(long, global = true)]
@@ -37,8 +38,8 @@ pub enum Command {
         #[arg(required = true)]
         artifacts: Vec<PathBuf>,
 
-        /// Output directory (default: ~/.cmdrvl/state/pack/<pack_id>/).
-        #[arg(long)]
+        /// Canonical output directory (default: ~/.cmdrvl/state/pack/<pack_id>/).
+        #[arg(long = "out", visible_alias = "output")]
         output: Option<PathBuf>,
 
         /// Optional annotation in manifest.
@@ -151,6 +152,13 @@ pub enum DoctorAction {
 
     /// Describe supported doctor capabilities.
     Capabilities {
+        /// Output JSON.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Emit the machine-readable triage report.
+    Triage {
         /// Output JSON.
         #[arg(long)]
         json: bool,
