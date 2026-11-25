@@ -274,16 +274,24 @@ fn dispatch_archive(command: ArchiveCommand) -> u8 {
 fn dispatch_witness(command: WitnessCommand) -> u8 {
     match command {
         WitnessCommand::Query { filters, json } => {
-            println!("{}", witness::query::execute_query(&filters, json));
-            ExitCode::Success.into()
+            dispatch_witness_read(witness::query::execute_query(&filters, json))
         }
-        WitnessCommand::Last { json } => {
-            println!("{}", witness::query::execute_last(json));
-            ExitCode::Success.into()
-        }
+        WitnessCommand::Last { json } => dispatch_witness_read(witness::query::execute_last(json)),
         WitnessCommand::Count { filters, json } => {
-            println!("{}", witness::query::execute_count(&filters, json));
+            dispatch_witness_read(witness::query::execute_count(&filters, json))
+        }
+    }
+}
+
+fn dispatch_witness_read(result: Result<String, String>) -> u8 {
+    match result {
+        Ok(output) => {
+            println!("{output}");
             ExitCode::Success.into()
+        }
+        Err(error) => {
+            eprintln!("pack: witness: {error}");
+            ExitCode::Refusal.into()
         }
     }
 }

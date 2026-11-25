@@ -1,4 +1,6 @@
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 fn pack_cmd() -> Command {
     Command::new(env!("CARGO_BIN_EXE_pack"))
@@ -9,6 +11,46 @@ fn pack_cmd_with_witness(ledger_path: &str) -> Command {
     let mut cmd = pack_cmd();
     cmd.env("EPISTEMIC_WITNESS", ledger_path);
     cmd
+}
+
+fn output_with_hard_timeout(mut command: Command) -> Result<Output, String> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if child.try_wait().unwrap().is_some() {
+            return child
+                .wait_with_output()
+                .map_err(|error| format!("failed to collect child output: {error}"));
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("child process exceeded the hard 5 second timeout".to_string());
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[cfg(unix)]
+fn assert_unreadable_ledger_refuses(ledger: &std::path::Path) {
+    for operation in ["query", "last", "count"] {
+        let mut command = pack_cmd_with_witness(ledger.to_str().unwrap());
+        command.args(["witness", operation]);
+        let output = output_with_hard_timeout(command).expect("witness child process failed");
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{operation} stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(stderr.lines().count(), 1);
+        assert!(stderr.contains("pack: witness: failed to read ledger"));
+        assert!(stderr.contains(ledger.to_str().unwrap()));
+    }
 }
 
 fn seal_temp_pack(
@@ -715,6 +757,43 @@ fn witness_query_empty_ledger() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(stdout.trim(), "[]");
+}
+
+#[cfg(unix)]
+#[test]
+fn unreadable_directory_ledger_refuses_without_hanging() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ledger = tmp.path().join("ledger-directory");
+    std::fs::create_dir(&ledger).unwrap();
+    assert_unreadable_ledger_refuses(&ledger);
+}
+
+#[cfg(unix)]
+#[test]
+fn permission_denied_ledger_refuses_without_hanging() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let ledger = tmp.path().join("ledger-file");
+    std::fs::write(&ledger, b"{\"not\":\"a witness record\"}\n").unwrap();
+    let mut permissions = std::fs::metadata(&ledger).unwrap().permissions();
+    permissions.set_mode(0o0);
+    std::fs::set_permissions(&ledger, permissions).unwrap();
+    assert_unreadable_ledger_refuses(&ledger);
+}
+
+#[test]
+fn invalid_utf8_ledger_lines_are_skipped() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ledger = tmp.path().join("invalid-utf8.jsonl");
+    std::fs::write(&ledger, [0xff, b'\n']).unwrap();
+
+    let mut command = pack_cmd_with_witness(ledger.to_str().unwrap());
+    command.args(["witness", "query", "--json"]);
+    let output = output_with_hard_timeout(command).expect("witness child process failed");
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "[]");
+    assert!(output.stderr.is_empty());
 }
 
 /// Witness accumulates across multiple operations.

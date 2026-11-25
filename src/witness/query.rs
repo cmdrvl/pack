@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{self, BufRead, BufReader};
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -9,39 +9,47 @@ use crate::cli::WitnessFilters;
 use super::ledger::witness_ledger_path_for_query;
 use super::record::WitnessRecord;
 
-fn read_ledger() -> Vec<WitnessRecord> {
-    let path = match witness_ledger_path_for_query() {
-        Ok(path) => path,
-        Err(_) => return Vec::new(),
-    };
+fn read_ledger() -> Result<Vec<WitnessRecord>, String> {
+    let path = witness_ledger_path_for_query()?;
     let file = match fs::File::open(&path) {
         Ok(file) => file,
-        Err(_) => return Vec::new(),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(format!("failed to read ledger {}: {error}", path.display())),
     };
 
-    BufReader::new(file)
-        .lines()
-        .map_while(Result::ok)
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str::<WitnessRecord>(&line).ok())
-        .collect()
+    let mut records = Vec::new();
+    for line in BufReader::new(file).lines() {
+        let line = match line {
+            Ok(line) => line,
+            Err(error) if error.kind() == io::ErrorKind::InvalidData => continue,
+            Err(error) => {
+                return Err(format!("failed to read ledger {}: {error}", path.display()));
+            }
+        };
+        if !line.trim().is_empty() {
+            if let Ok(record) = serde_json::from_str::<WitnessRecord>(&line) {
+                records.push(record);
+            }
+        }
+    }
+    Ok(records)
 }
 
 /// Execute `pack witness query` — return matching witness records.
-pub fn execute_query(filters: &WitnessFilters, json_output: bool) -> String {
-    let records = read_ledger();
+pub fn execute_query(filters: &WitnessFilters, json_output: bool) -> Result<String, String> {
+    let records = read_ledger()?;
     let records = filter_records(&records, filters, true);
     if records.is_empty() {
-        return if json_output {
+        return Ok(if json_output {
             "[]".to_string()
         } else if filters_active(filters) {
             "No matching witness records.".to_string()
         } else {
             "No witness records found.".to_string()
-        };
+        });
     }
 
-    if json_output {
+    Ok(if json_output {
         serde_json::to_string_pretty(&records).unwrap_or_else(|_| "[]".to_string())
     } else {
         records
@@ -49,15 +57,15 @@ pub fn execute_query(filters: &WitnessFilters, json_output: bool) -> String {
             .map(|record| format_record_human(record))
             .collect::<Vec<_>>()
             .join("\n")
-    }
+    })
 }
 
 /// Execute `pack witness last` — return the most recent pack witness record.
-pub fn execute_last(json_output: bool) -> String {
-    let records = read_ledger();
+pub fn execute_last(json_output: bool) -> Result<String, String> {
+    let records = read_ledger()?;
     let filters = WitnessFilters::default();
     let record = filter_records(&records, &filters, true).into_iter().last();
-    match record {
+    Ok(match record {
         Some(record) => {
             if json_output {
                 serde_json::to_string_pretty(record).unwrap_or_else(|_| "null".to_string())
@@ -72,18 +80,18 @@ pub fn execute_last(json_output: bool) -> String {
                 "No witness records found.".to_string()
             }
         }
-    }
+    })
 }
 
 /// Execute `pack witness count` — return count of matching witness records.
-pub fn execute_count(filters: &WitnessFilters, json_output: bool) -> String {
-    let records = read_ledger();
+pub fn execute_count(filters: &WitnessFilters, json_output: bool) -> Result<String, String> {
+    let records = read_ledger()?;
     let count = filter_records(&records, filters, true).len();
-    if json_output {
+    Ok(if json_output {
         serde_json::json!({"count": count}).to_string()
     } else {
         format!("{count} witness record(s)")
-    }
+    })
 }
 
 fn filter_records<'a>(
@@ -207,9 +215,9 @@ mod tests {
     fn query_empty_ledger() {
         let _env_lock = crate::witness::test_env_guard();
         let _tmp = setup_ledger();
-        let result = execute_query(&WitnessFilters::default(), false);
+        let result = execute_query(&WitnessFilters::default(), false).unwrap();
         assert_eq!(result, "No witness records found.");
-        let json_result = execute_query(&WitnessFilters::default(), true);
+        let json_result = execute_query(&WitnessFilters::default(), true).unwrap();
         assert_eq!(json_result, "[]");
         teardown();
     }
@@ -233,11 +241,11 @@ mod tests {
         );
         append_witness(&r).unwrap();
 
-        let result = execute_query(&WitnessFilters::default(), false);
+        let result = execute_query(&WitnessFilters::default(), false).unwrap();
         assert!(result.contains("seal"));
         assert!(result.contains("PACK_CREATED"));
 
-        let json_result = execute_query(&WitnessFilters::default(), true);
+        let json_result = execute_query(&WitnessFilters::default(), true).unwrap();
         let parsed: Vec<WitnessRecord> = serde_json::from_str(&json_result).unwrap();
         assert_eq!(parsed.len(), 1);
         teardown();
@@ -268,11 +276,11 @@ mod tests {
         append_witness(&r1).unwrap();
         append_witness(&r2).unwrap();
 
-        let result = execute_last(false);
+        let result = execute_last(false).unwrap();
         assert!(result.contains("verify"));
         assert!(result.contains("OK"));
 
-        let json_result = execute_last(true);
+        let json_result = execute_last(true).unwrap();
         let parsed: WitnessRecord = serde_json::from_str(&json_result).unwrap();
         assert_eq!(parsed.command.as_deref(), Some("verify"));
         teardown();
@@ -282,9 +290,9 @@ mod tests {
     fn last_empty_ledger() {
         let _env_lock = crate::witness::test_env_guard();
         let _tmp = setup_ledger();
-        let result = execute_last(false);
+        let result = execute_last(false).unwrap();
         assert_eq!(result, "No witness records found.");
-        let json_result = execute_last(true);
+        let json_result = execute_last(true).unwrap();
         assert_eq!(json_result, "null");
         teardown();
     }
@@ -314,10 +322,10 @@ mod tests {
         append_witness(&r1).unwrap();
         append_witness(&r2).unwrap();
 
-        let result = execute_count(&WitnessFilters::default(), false);
+        let result = execute_count(&WitnessFilters::default(), false).unwrap();
         assert_eq!(result, "2 witness record(s)");
 
-        let json_result = execute_count(&WitnessFilters::default(), true);
+        let json_result = execute_count(&WitnessFilters::default(), true).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json_result).unwrap();
         assert_eq!(parsed["count"], 2);
         teardown();
@@ -327,7 +335,7 @@ mod tests {
     fn count_empty_ledger() {
         let _env_lock = crate::witness::test_env_guard();
         let _tmp = setup_ledger();
-        let result = execute_count(&WitnessFilters::default(), false);
+        let result = execute_count(&WitnessFilters::default(), false).unwrap();
         assert_eq!(result, "0 witness record(s)");
         teardown();
     }
@@ -348,7 +356,7 @@ mod tests {
         )
         .unwrap();
 
-        let default_json = execute_query(&WitnessFilters::default(), true);
+        let default_json = execute_query(&WitnessFilters::default(), true).unwrap();
         let default_records: Vec<WitnessRecord> = serde_json::from_str(&default_json).unwrap();
         assert_eq!(default_records.len(), 1);
         assert_eq!(default_records[0].tool, "pack");
@@ -359,7 +367,8 @@ mod tests {
                 ..WitnessFilters::default()
             },
             true,
-        );
+        )
+        .unwrap();
         let hash_records: Vec<WitnessRecord> = serde_json::from_str(&hash_json).unwrap();
         assert_eq!(hash_records.len(), 1);
         assert_eq!(hash_records[0].tool, "hash");
@@ -412,7 +421,8 @@ mod tests {
                 ..WitnessFilters::default()
             },
             true,
-        );
+        )
+        .unwrap();
         let records: Vec<WitnessRecord> = serde_json::from_str(&json_result).unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].outcome, "PACK_CREATED");
@@ -430,7 +440,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = execute_query(&WitnessFilters::default(), false);
+        let result = execute_query(&WitnessFilters::default(), false).unwrap();
         assert!(result.contains("seal"));
         assert!(result.contains("sha256:legacy"));
         teardown();
