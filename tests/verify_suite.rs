@@ -132,6 +132,85 @@ fn extra_member_is_invalid() {
     assert_eq!(report["checks"]["extra_members"], false);
 }
 
+/// An unreadable declared member is a typed I/O refusal, not a successful hash check.
+#[cfg(unix)]
+#[test]
+fn unreadable_member_is_io_refusal() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let pack_dir = tmp.path().join("unreadable_member");
+    let seal = pack_cmd()
+        .args([
+            "seal",
+            "fixtures/packs/valid/unknown.txt",
+            "--out",
+            pack_dir.to_str().unwrap(),
+            "--created",
+            "2026-01-15T00:00:00Z",
+            "--no-witness",
+        ])
+        .output()
+        .unwrap();
+    assert!(seal.status.success(), "seal failed: {:?}", seal);
+
+    let member = pack_dir.join("unknown.txt");
+    let mut permissions = std::fs::metadata(&member).unwrap().permissions();
+    permissions.set_mode(0);
+    std::fs::set_permissions(&member, permissions).unwrap();
+
+    let (report, code) = verify_json(pack_dir.to_str().unwrap());
+    assert_eq!(code, 2);
+    assert_eq!(report["outcome"], "REFUSAL");
+    assert_eq!(report["refusal"]["code"], "E_IO");
+    assert_eq!(report["checks"]["member_hashes"], false);
+    assert!(report["invalid"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|finding| finding["code"] == "MEMBER_IO_ERROR"));
+}
+
+/// An unreadable extra directory is a typed I/O refusal, not an ignored walk error.
+#[cfg(unix)]
+#[test]
+fn unreadable_extra_directory_is_io_refusal() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let pack_dir = tmp.path().join("unreadable_directory");
+    let seal = pack_cmd()
+        .args([
+            "seal",
+            "fixtures/packs/valid/unknown.txt",
+            "--out",
+            pack_dir.to_str().unwrap(),
+            "--created",
+            "2026-01-15T00:00:00Z",
+            "--no-witness",
+        ])
+        .output()
+        .unwrap();
+    assert!(seal.status.success(), "seal failed: {:?}", seal);
+
+    let unreadable = pack_dir.join("unreadable-extra");
+    std::fs::create_dir(&unreadable).unwrap();
+    let mut permissions = std::fs::metadata(&unreadable).unwrap().permissions();
+    permissions.set_mode(0);
+    std::fs::set_permissions(&unreadable, permissions).unwrap();
+
+    let (report, code) = verify_json(pack_dir.to_str().unwrap());
+    assert_eq!(code, 2);
+    assert_eq!(report["outcome"], "REFUSAL");
+    assert_eq!(report["refusal"]["code"], "E_IO");
+    assert_eq!(report["checks"]["extra_members"], false);
+    assert!(report["invalid"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|finding| finding["code"] == "DIR_IO_ERROR"));
+}
+
 // ---------------------------------------------------------------------------
 // INVALID outcomes (exit 1) — constructed at test time
 // ---------------------------------------------------------------------------

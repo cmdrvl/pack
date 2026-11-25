@@ -200,11 +200,38 @@ fn check_one_member_hash(member: &Member, pack_dir: &Path) -> MemberHashResult {
     let member_path = pack_dir.join(&member.path);
 
     // Check exists.
-    if !member_path.exists() {
+    let metadata = match fs::symlink_metadata(&member_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return MemberHashResult {
+                ok: false,
+                findings: vec![InvalidFinding {
+                    code: "MISSING_MEMBER".to_string(),
+                    path: Some(member.path.clone()),
+                    expected: None,
+                    actual: None,
+                }],
+            };
+        }
+        Err(error) => {
+            return MemberHashResult {
+                ok: false,
+                findings: vec![InvalidFinding {
+                    code: "MEMBER_IO_ERROR".to_string(),
+                    path: Some(member.path.clone()),
+                    expected: None,
+                    actual: Some(error.to_string()),
+                }],
+            };
+        }
+    };
+
+    // Check symlink and non-file members.
+    if metadata.is_symlink() || !metadata.is_file() {
         return MemberHashResult {
             ok: false,
             findings: vec![InvalidFinding {
-                code: "MISSING_MEMBER".to_string(),
+                code: "NON_REGULAR_MEMBER".to_string(),
                 path: Some(member.path.clone()),
                 expected: None,
                 actual: None,
@@ -212,24 +239,10 @@ fn check_one_member_hash(member: &Member, pack_dir: &Path) -> MemberHashResult {
         };
     }
 
-    // Check symlink and non-file members.
-    if let Ok(meta) = fs::symlink_metadata(&member_path) {
-        if meta.is_symlink() || !meta.is_file() {
-            return MemberHashResult {
-                ok: false,
-                findings: vec![InvalidFinding {
-                    code: "NON_REGULAR_MEMBER".to_string(),
-                    path: Some(member.path.clone()),
-                    expected: None,
-                    actual: None,
-                }],
-            };
-        }
-    }
-
     // Check hash without reading the full member into memory.
-    if let Ok(hash) = hash_file(&member_path) {
-        if hash != member.bytes_hash {
+    match hash_file(&member_path) {
+        Ok(hash) if hash == member.bytes_hash => {}
+        Ok(hash) => {
             return MemberHashResult {
                 ok: false,
                 findings: vec![InvalidFinding {
@@ -237,6 +250,17 @@ fn check_one_member_hash(member: &Member, pack_dir: &Path) -> MemberHashResult {
                     path: Some(member.path.clone()),
                     expected: Some(member.bytes_hash.clone()),
                     actual: Some(hash),
+                }],
+            };
+        }
+        Err(error) => {
+            return MemberHashResult {
+                ok: false,
+                findings: vec![InvalidFinding {
+                    code: "MEMBER_IO_ERROR".to_string(),
+                    path: Some(member.path.clone()),
+                    expected: None,
+                    actual: Some(error.to_string()),
                 }],
             };
         }
@@ -290,20 +314,45 @@ fn check_extra_recursive(
     findings: &mut Vec<InvalidFinding>,
     extra_ok: &mut bool,
 ) {
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let relative = format!("{}/{}", prefix, entry.file_name().to_string_lossy());
-            if entry.path().is_dir() {
-                check_extra_recursive(&entry.path(), &relative, declared, findings, extra_ok);
-            } else if !declared.contains(&relative) {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            findings.push(InvalidFinding {
+                code: "DIR_IO_ERROR".to_string(),
+                path: Some(dir.display().to_string()),
+                expected: None,
+                actual: Some(error.to_string()),
+            });
+            *extra_ok = false;
+            return;
+        }
+    };
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
                 findings.push(InvalidFinding {
-                    code: "EXTRA_MEMBER".to_string(),
-                    path: Some(relative),
+                    code: "DIR_IO_ERROR".to_string(),
+                    path: Some(dir.display().to_string()),
                     expected: None,
-                    actual: None,
+                    actual: Some(error.to_string()),
                 });
                 *extra_ok = false;
+                continue;
             }
+        };
+        let relative = format!("{}/{}", prefix, entry.file_name().to_string_lossy());
+        if entry.path().is_dir() {
+            check_extra_recursive(&entry.path(), &relative, declared, findings, extra_ok);
+        } else if !declared.contains(&relative) {
+            findings.push(InvalidFinding {
+                code: "EXTRA_MEMBER".to_string(),
+                path: Some(relative),
+                expected: None,
+                actual: None,
+            });
+            *extra_ok = false;
         }
     }
 }

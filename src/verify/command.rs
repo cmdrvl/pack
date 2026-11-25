@@ -65,7 +65,12 @@ pub fn execute_verify(pack_dir: &Path, json_output: bool) -> (String, u8) {
     // Step 4: Run integrity checks
     let (checks, findings) = run_checks(&manifest, pack_dir);
 
-    let report = if findings.is_empty() {
+    let io_failure = findings
+        .iter()
+        .any(|finding| finding.code == "MEMBER_IO_ERROR" || finding.code == "DIR_IO_ERROR");
+    let report = if io_failure {
+        VerifyReport::io_refusal(checks, findings)
+    } else if findings.is_empty() {
         VerifyReport::ok(manifest.pack_id.clone(), checks)
     } else {
         VerifyReport::invalid(Some(manifest.pack_id.clone()), checks, findings)

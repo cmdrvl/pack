@@ -103,6 +103,21 @@ impl VerifyReport {
         }
     }
 
+    pub fn io_refusal(checks: VerifyChecks, findings: Vec<InvalidFinding>) -> Self {
+        Self {
+            version: "pack.verify.v0".to_string(),
+            outcome: VerifyOutcome::REFUSAL,
+            pack_id: None,
+            checks,
+            invalid: findings.clone(),
+            refusal: Some(serde_json::json!({
+                "code": "E_IO",
+                "message": "Cannot read all pack members or directories",
+                "findings": findings,
+            })),
+        }
+    }
+
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).expect("verify report serialization cannot fail")
     }
