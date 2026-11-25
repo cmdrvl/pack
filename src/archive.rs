@@ -14,6 +14,8 @@ use crate::staging::{
 use crate::verify::run_checks;
 
 const TAR_BLOCK_SIZE: usize = 512;
+const MAX_ARCHIVE_MEMBERS: usize = 10_000;
+const MAX_EXTRACTED_BYTES: u64 = 1 << 30;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveResult {
@@ -259,8 +261,17 @@ fn extract_archive(archive_file: &Path, dest_dir: &Path) -> Result<(), Box<Refus
     })?;
     let mut seen = HashSet::new();
     let mut entry_index = 0usize;
+    let mut total_extracted_bytes = 0u64;
 
     loop {
+        if entry_index >= MAX_ARCHIVE_MEMBERS {
+            return Err(archive_limit_refusal(
+                "member_count",
+                entry_index.saturating_add(1).to_string(),
+                MAX_ARCHIVE_MEMBERS.to_string(),
+            ));
+        }
+
         let mut header = [0u8; TAR_BLOCK_SIZE];
         reader.read_exact(&mut header).map_err(|error| {
             Box::new(RefusalEnvelope::new(
@@ -315,6 +326,22 @@ fn extract_archive(archive_file: &Path, dest_dir: &Path) -> Result<(), Box<Refus
         }
 
         let size = parse_octal(&header[124..136])?;
+        let next_total = total_extracted_bytes.checked_add(size).ok_or_else(|| {
+            archive_limit_refusal(
+                "total_extracted_bytes",
+                "overflow".to_string(),
+                MAX_EXTRACTED_BYTES.to_string(),
+            )
+        })?;
+        if next_total > MAX_EXTRACTED_BYTES {
+            return Err(archive_limit_refusal(
+                "total_extracted_bytes",
+                next_total.to_string(),
+                MAX_EXTRACTED_BYTES.to_string(),
+            ));
+        }
+        total_extracted_bytes = next_total;
+
         let output_path = safe_join(dest_dir, &path)?;
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent).map_err(|error| {
@@ -409,19 +436,37 @@ fn ensure_safe_archive_path(path: &str) -> Result<(), Box<RefusalEnvelope>> {
         return Err(unsafe_archive_path(path));
     }
 
+    if path.ends_with('/')
+        || path.ends_with('\\')
+        || path.contains('\\')
+        || path.split('/').any(|component| component == ".")
+    {
+        return Err(unsafe_archive_path(path));
+    }
+
     let path = Path::new(path);
     if path.is_absolute() {
         return Err(unsafe_archive_path(&path.display().to_string()));
     }
-    if path.components().any(|component| {
-        matches!(
-            component,
-            Component::ParentDir | Component::RootDir | Component::Prefix(_)
-        )
-    }) {
+    if path
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_)))
+    {
         return Err(unsafe_archive_path(&path.display().to_string()));
     }
     Ok(())
+}
+
+fn archive_limit_refusal(limit: &str, actual: String, maximum: String) -> Box<RefusalEnvelope> {
+    Box::new(RefusalEnvelope::new(
+        RefusalCode::BadPack,
+        Some(format!("Archive {limit} exceeds extraction limit")),
+        Some(json!({
+            "limit": limit,
+            "actual": actual,
+            "maximum": maximum,
+        })),
+    ))
 }
 
 fn unsafe_archive_path(path: &str) -> Box<RefusalEnvelope> {
@@ -695,6 +740,97 @@ mod tests {
 
         assert_eq!(error.refusal.code, "E_BAD_PACK");
         assert!(!imported.exists());
+    }
+
+    #[test]
+    fn archive_import_refuses_curdir_manifest_overwrite() {
+        let (tmp, pack_dir, _pack_id) = create_pack();
+        let archive = tmp.path().join("curdir.tar");
+        let imported = tmp.path().join("imported");
+        let manifest: Manifest =
+            serde_json::from_str(&fs::read_to_string(pack_dir.join("manifest.json")).unwrap())
+                .unwrap();
+        let mut bytes = Vec::new();
+        write_tar_file(&mut bytes, "manifest.json", &manifest.to_canonical_bytes()).unwrap();
+        write_tar_file(&mut bytes, "./manifest.json", b"overwrite").unwrap();
+        bytes.extend_from_slice(&[0u8; TAR_BLOCK_SIZE * 2]);
+        fs::write(&archive, bytes).unwrap();
+
+        let error = execute_archive_import(&archive, &imported).unwrap_err();
+
+        assert_eq!(error.refusal.code, "E_BAD_PACK");
+        assert!(error.refusal.message.contains("unsafe member path"));
+        assert_eq!(
+            error.refusal.detail.as_ref().unwrap()["path"],
+            "./manifest.json"
+        );
+        assert!(!imported.exists());
+    }
+
+    #[test]
+    fn archive_import_rejects_excessive_extracted_bytes() {
+        let (tmp, pack_dir, _pack_id) = create_pack();
+        let archive = tmp.path().join("too-large.tar");
+        let imported = tmp.path().join("imported");
+        let manifest: Manifest =
+            serde_json::from_str(&fs::read_to_string(pack_dir.join("manifest.json")).unwrap())
+                .unwrap();
+        let mut bytes = Vec::new();
+        write_tar_file(&mut bytes, "manifest.json", &manifest.to_canonical_bytes()).unwrap();
+        let header_start = bytes.len();
+        write_tar_file(&mut bytes, "huge.bin", &[]).unwrap();
+        let header = &mut bytes[header_start..header_start + TAR_BLOCK_SIZE];
+        write_octal(&mut header[124..136], MAX_EXTRACTED_BYTES + 1, "size").unwrap();
+        for byte in &mut header[148..156] {
+            *byte = b' ';
+        }
+        let checksum = header.iter().map(|byte| u64::from(*byte)).sum();
+        write_checksum(&mut header[148..156], checksum).unwrap();
+        bytes.extend_from_slice(&[0u8; TAR_BLOCK_SIZE * 2]);
+        fs::write(&archive, bytes).unwrap();
+
+        let error = execute_archive_import(&archive, &imported).unwrap_err();
+
+        assert_eq!(error.refusal.code, "E_BAD_PACK");
+        assert_eq!(
+            error.refusal.detail.as_ref().unwrap()["limit"],
+            "total_extracted_bytes"
+        );
+        assert!(!imported.exists());
+    }
+
+    #[test]
+    fn archive_import_rejects_excessive_member_count() {
+        let (tmp, pack_dir, _pack_id) = create_pack();
+        let archive = tmp.path().join("too-many.tar");
+        let imported = tmp.path().join("imported");
+        let manifest: Manifest =
+            serde_json::from_str(&fs::read_to_string(pack_dir.join("manifest.json")).unwrap())
+                .unwrap();
+        let mut bytes = Vec::new();
+        write_tar_file(&mut bytes, "manifest.json", &manifest.to_canonical_bytes()).unwrap();
+        for index in 0..MAX_ARCHIVE_MEMBERS {
+            write_tar_file(&mut bytes, &format!("member-{index}.bin"), &[]).unwrap();
+        }
+        bytes.extend_from_slice(&[0u8; TAR_BLOCK_SIZE * 2]);
+        fs::write(&archive, bytes).unwrap();
+
+        let error = execute_archive_import(&archive, &imported).unwrap_err();
+
+        assert_eq!(error.refusal.code, "E_BAD_PACK");
+        assert_eq!(
+            error.refusal.detail.as_ref().unwrap()["limit"],
+            "member_count"
+        );
+        assert!(!imported.exists());
+    }
+
+    #[test]
+    fn archive_paths_require_normal_components() {
+        for path in ["./manifest.json", "a/./b", "trailing/", r"back\\slash"] {
+            let error = ensure_safe_archive_path(path).unwrap_err();
+            assert_eq!(error.refusal.code, "E_BAD_PACK", "path: {path}");
+        }
     }
 
     #[test]
