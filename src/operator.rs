@@ -123,6 +123,26 @@ mod tests {
     }
 
     #[test]
+    fn operator_manifest_documents_witness_policy() {
+        let op = operator_json();
+
+        for name in ["inspect", "archive"] {
+            assert_eq!(
+                subcommand(&op, name)["witness"],
+                "not_recorded",
+                "{name} must declare that it does not record a witness"
+            );
+        }
+
+        for name in ["diff", "seal", "verify"] {
+            assert!(
+                subcommand(&op, name).get("witness").is_none(),
+                "{name} must not carry a witness marker"
+            );
+        }
+    }
+
+    #[test]
     fn operator_manifest_documents_seal_outcome_option() {
         let op = operator_json();
         let outcome = seal_option(&op, "outcome");
