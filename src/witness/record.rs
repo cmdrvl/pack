@@ -1,4 +1,6 @@
 use chrono::{SecondsFormat, Utc};
+use cmdrvl_core::hash::{hash_bytes, Algorithm};
+use cmdrvl_core::sorted_compact;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -64,14 +66,12 @@ impl WitnessRecord {
             tool: "pack".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             command: Some(command.into()),
-            binary_hash: hash_self()
-                .map(|value| format!("blake3:{value}"))
-                .unwrap_or_default(),
+            binary_hash: hash_self().unwrap_or_default(),
             inputs,
             params,
             outcome: outcome.into(),
             exit_code,
-            output_hash: format!("blake3:{}", blake3::hash(output_bytes).to_hex()),
+            output_hash: hash_bytes(Algorithm::Blake3, output_bytes),
             ts: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
             pack_id,
         }
@@ -79,20 +79,42 @@ impl WitnessRecord {
 
     pub fn compute_id(&mut self) {
         self.id.clear();
-        self.id = format!(
-            "blake3:{}",
-            blake3::hash(canonical_json(self).as_bytes()).to_hex()
-        );
+        self.id = hash_bytes(Algorithm::Blake3, canonical_json(self).as_bytes());
     }
 }
 
+/// The ledger line, and the bytes a record id is computed over: cmdrvl-core's sorted compact
+/// form. Keys stay sorted even if serde_json's `preserve_order` is switched on in a build.
 pub fn canonical_json(record: &WitnessRecord) -> String {
     let value = serde_json::to_value(record).expect("WitnessRecord should serialize");
-    serde_json::to_string(&value).expect("WitnessRecord JSON should encode")
+    sorted_compact::to_string(&value)
 }
 
+/// The prefixed hash of the running binary.
 fn hash_self() -> Result<String, std::io::Error> {
     let path = std::env::current_exe()?;
     let bytes = std::fs::read(path)?;
-    Ok(blake3::hash(&bytes).to_hex().to_string())
+    Ok(hash_bytes(Algorithm::Blake3, &bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Ledger lines written by the released pack 0.7.2 binary, with non-ASCII params. Do not
+    /// regenerate them from the code under test.
+    const RELEASED_LEDGER: &str = include_str!("../../fixtures/released-0.7.2/witness.jsonl");
+
+    #[test]
+    fn released_witness_lines_and_ids_are_reproduced() {
+        assert_eq!(RELEASED_LEDGER.lines().count(), 4);
+        for line in RELEASED_LEDGER.lines() {
+            let mut record: WitnessRecord = serde_json::from_str(line).unwrap();
+            assert_eq!(canonical_json(&record), line);
+
+            let released_id = record.id.clone();
+            record.compute_id();
+            assert_eq!(record.id, released_id);
+        }
+    }
 }

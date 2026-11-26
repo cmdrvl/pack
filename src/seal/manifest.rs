@@ -1,5 +1,6 @@
+use cmdrvl_core::hash::{hash_bytes, Algorithm};
+use cmdrvl_core::sorted_compact;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 /// Manifest schema version.
 pub const MANIFEST_VERSION: &str = "pack.v0";
@@ -67,8 +68,7 @@ impl Manifest {
     pub fn finalize(&mut self) {
         self.pack_id = String::new();
         let canonical = canonical_json(self);
-        let hash = sha256_hex(canonical.as_bytes());
-        self.pack_id = format!("sha256:{hash}");
+        self.pack_id = hash_bytes(Algorithm::Sha256, canonical.as_bytes());
     }
 
     /// Recompute pack_id without mutating, for verification.
@@ -76,8 +76,7 @@ impl Manifest {
         let mut copy = self.clone();
         copy.pack_id = String::new();
         let canonical = canonical_json(&copy);
-        let hash = sha256_hex(canonical.as_bytes());
-        format!("sha256:{hash}")
+        hash_bytes(Algorithm::Sha256, canonical.as_bytes())
     }
 
     /// Serialize the finalized manifest to deterministic JSON bytes.
@@ -86,47 +85,11 @@ impl Manifest {
     }
 }
 
-/// Produce canonical JSON: deterministic key ordering via serde_json::Value
-/// round-trip, then serialize with sorted maps.
+/// The bytes `pack_id` is computed over and `manifest.json` is written with: cmdrvl-core's
+/// sorted compact form. It is NOT RFC 8785; moving to `cmdrvl_core::jcs` would change stored ids.
 fn canonical_json(manifest: &Manifest) -> String {
-    // serde_json::to_value + to_string produces deterministic output because
-    // serde_json preserves insertion order from the struct derive order.
-    // For true canonical form we round-trip through Value to ensure stability.
     let value = serde_json::to_value(manifest).expect("manifest serialization cannot fail");
-    sorted_json(&value)
-}
-
-/// Recursively serialize a serde_json::Value with sorted object keys.
-fn sorted_json(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::Object(map) => {
-            let mut keys: Vec<&String> = map.keys().collect();
-            keys.sort();
-            let entries: Vec<String> = keys
-                .iter()
-                .map(|k| {
-                    format!(
-                        "{}:{}",
-                        serde_json::to_string(k).unwrap(),
-                        sorted_json(&map[*k])
-                    )
-                })
-                .collect();
-            format!("{{{}}}", entries.join(","))
-        }
-        serde_json::Value::Array(arr) => {
-            let entries: Vec<String> = arr.iter().map(sorted_json).collect();
-            format!("[{}]", entries.join(","))
-        }
-        _ => serde_json::to_string(value).unwrap(),
-    }
-}
-
-fn sha256_hex(data: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    let result = hasher.finalize();
-    hex::encode(result)
+    sorted_compact::to_string(&value)
 }
 
 #[cfg(test)]
