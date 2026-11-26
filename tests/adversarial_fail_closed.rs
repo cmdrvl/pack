@@ -1,5 +1,6 @@
 use std::ffi::OsStr;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::thread;
@@ -57,6 +58,82 @@ where
     }
 }
 
+fn run_bounded_with_stdin<I, S>(args: I, input: &[u8]) -> Result<Output, String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let mut child = pack_command()
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn pack stdin child");
+    let mut input_writer = child.stdin.take().expect("pack stdin should be piped");
+    let input = input.to_vec();
+    let feeder = thread::spawn(move || input_writer.write_all(&input));
+    let started = Instant::now();
+
+    loop {
+        if child.try_wait().expect("poll pack stdin child").is_some() {
+            let output = child
+                .wait_with_output()
+                .expect("collect pack stdin child output");
+            let _ = feeder.join();
+            return Ok(output);
+        }
+        if started.elapsed() >= CHILD_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = feeder.join();
+            return Err(format!("pack stdin child exceeded {CHILD_TIMEOUT:?}"));
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn run_bounded_with_fifo<I, S>(args: I, fifo: &Path, source: &Path) -> Result<Output, String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    // Start the reader first so a rejected implementation cannot block the
+    // writer before the child-process timeout is active.
+    let mut child = pack_command()
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn pack FIFO child");
+    let mut writer = Command::new("cp")
+        .arg(source)
+        .arg(fifo)
+        .stdout(Stdio::null())
+        .spawn()
+        .expect("spawn FIFO writer");
+    let started = Instant::now();
+
+    let output = loop {
+        if child.try_wait().expect("poll pack FIFO child").is_some() {
+            break Ok(child
+                .wait_with_output()
+                .expect("collect pack FIFO child output"));
+        }
+        if started.elapsed() >= CHILD_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = writer.kill();
+            let _ = writer.wait();
+            break Err(format!("pack FIFO child exceeded {CHILD_TIMEOUT:?}"));
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+    let _ = writer.kill();
+    let _ = writer.wait();
+    output
+}
+
 fn assert_refusal(output: Output, expected_code: &str) -> Value {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -72,6 +149,22 @@ fn assert_refusal(output: Output, expected_code: &str) -> Value {
     assert_eq!(envelope["outcome"], "REFUSAL");
     assert_eq!(envelope["refusal"]["code"], expected_code);
     envelope
+}
+
+fn assert_import_success(output: &Output, destination: &Path) {
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout={:?}\nstderr={:?}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).starts_with("ARCHIVE_IMPORTED sha256:"),
+        "stdout={:?}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(destination.join("manifest.json").is_file());
 }
 
 fn assert_no_output(path: &Path) {
@@ -379,4 +472,74 @@ fn directory_where_archive_file_is_expected_is_typed_and_atomic() {
     let output = run_import(&archive_directory, &output_dir);
     let _ = assert_refusal(output, "E_IO");
     assert_no_output(&output_dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn archive_input_rejects_only_directories_and_follows_streams() {
+    use std::os::unix::fs::symlink;
+
+    let (tmp, _pack_dir, archive, _manifest, _content) = make_pack();
+    let archive_bytes = fs::read(&archive).unwrap();
+
+    // A symlink to a regular archive must remain an accepted input.
+    let archive_link = tmp.path().join("archive-link.tar");
+    symlink(&archive, &archive_link).unwrap();
+    let linked_destination = tmp.path().join("linked-import");
+    let linked = run_import(&archive_link, &linked_destination);
+    assert_import_success(&linked, &linked_destination);
+
+    // A FIFO is a valid stream input. Keep the writer in a separately
+    // killable child so an implementation that rejects before opening it
+    // cannot strand this test on a blocked FIFO open.
+    let fifo = tmp.path().join("archive.fifo");
+    assert!(
+        Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success(),
+        "mkfifo failed"
+    );
+    let fifo_destination = tmp.path().join("fifo-import");
+    let fifo_result = run_bounded_with_fifo(
+        [
+            "--no-witness".to_owned(),
+            "archive".to_owned(),
+            "import".to_owned(),
+            fifo.display().to_string(),
+            "--out".to_owned(),
+            fifo_destination.display().to_string(),
+        ],
+        &fifo,
+        &archive,
+    )
+    .expect("pack FIFO child");
+    assert_import_success(&fifo_result, &fifo_destination);
+
+    // /dev/stdin is also an accepted stream input.
+    let stdin_destination = tmp.path().join("stdin-import");
+    let stdin_result = run_bounded_with_stdin(
+        [
+            "--no-witness".to_owned(),
+            "archive".to_owned(),
+            "import".to_owned(),
+            "/dev/stdin".to_owned(),
+            "--out".to_owned(),
+            stdin_destination.display().to_string(),
+        ],
+        &archive_bytes,
+    )
+    .expect("pack stdin child");
+    assert_import_success(&stdin_result, &stdin_destination);
+
+    // Directory symlinks are followed and refused before staging/extraction.
+    let directory = tmp.path().join("archive-directory");
+    fs::create_dir(&directory).unwrap();
+    let directory_link = tmp.path().join("directory-link");
+    symlink(&directory, &directory_link).unwrap();
+    let directory_destination = tmp.path().join("directory-import");
+    let directory_result = run_import(&directory_link, &directory_destination);
+    let _ = assert_refusal(directory_result, "E_IO");
+    assert_no_output(&directory_destination);
 }

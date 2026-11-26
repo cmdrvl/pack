@@ -247,7 +247,10 @@ fn write_tar_file<W: Write>(
 }
 
 fn extract_archive(archive_file: &Path, dest_dir: &Path) -> Result<(), Box<RefusalEnvelope>> {
-    let metadata = fs::symlink_metadata(archive_file).map_err(|error| {
+    // Follow links and admit stream-like inputs (FIFOs and stdin). Only a
+    // directory is invalid at this boundary; the archive reader below is
+    // responsible for classifying malformed or truncated byte streams.
+    let metadata = fs::metadata(archive_file).map_err(|error| {
         Box::new(RefusalEnvelope::new(
             RefusalCode::Io,
             Some(format!(
@@ -259,11 +262,11 @@ fn extract_archive(archive_file: &Path, dest_dir: &Path) -> Result<(), Box<Refus
             })),
         ))
     })?;
-    if !metadata.is_file() {
+    if metadata.is_dir() {
         return Err(Box::new(RefusalEnvelope::new(
             RefusalCode::Io,
             Some(format!(
-                "Archive input is not a regular file: {}",
+                "Archive input is a directory: {}",
                 archive_file.display()
             )),
             Some(json!({
