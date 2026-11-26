@@ -247,6 +247,31 @@ fn write_tar_file<W: Write>(
 }
 
 fn extract_archive(archive_file: &Path, dest_dir: &Path) -> Result<(), Box<RefusalEnvelope>> {
+    let metadata = fs::symlink_metadata(archive_file).map_err(|error| {
+        Box::new(RefusalEnvelope::new(
+            RefusalCode::Io,
+            Some(format!(
+                "Cannot inspect archive file {}: {error}",
+                archive_file.display()
+            )),
+            Some(json!({
+                "archive": archive_file.display().to_string(),
+            })),
+        ))
+    })?;
+    if !metadata.is_file() {
+        return Err(Box::new(RefusalEnvelope::new(
+            RefusalCode::Io,
+            Some(format!(
+                "Archive input is not a regular file: {}",
+                archive_file.display()
+            )),
+            Some(json!({
+                "archive": archive_file.display().to_string(),
+            })),
+        )));
+    }
+
     let mut reader = File::open(archive_file).map_err(|error| {
         Box::new(RefusalEnvelope::new(
             RefusalCode::Io,
@@ -284,6 +309,25 @@ fn extract_archive(archive_file: &Path, dest_dir: &Path) -> Result<(), Box<Refus
         })?;
 
         if header.iter().all(|byte| *byte == 0) {
+            let mut terminator = [0u8; TAR_BLOCK_SIZE];
+            reader.read_exact(&mut terminator).map_err(|error| {
+                Box::new(RefusalEnvelope::new(
+                    RefusalCode::BadPack,
+                    Some(format!("Archive terminator is truncated: {error}")),
+                    Some(json!({
+                        "archive": archive_file.display().to_string(),
+                    })),
+                ))
+            })?;
+            if terminator.iter().any(|byte| *byte != 0) {
+                return Err(Box::new(RefusalEnvelope::new(
+                    RefusalCode::BadPack,
+                    Some("Archive terminator is not two zero blocks".to_string()),
+                    Some(json!({
+                        "archive": archive_file.display().to_string(),
+                    })),
+                )));
+            }
             break;
         }
         validate_header_checksum(&header)?;
