@@ -105,6 +105,25 @@ mod tests {
     /// regenerate them from the code under test.
     const RELEASED_LEDGER: &str = include_str!("../../fixtures/released-0.7.2/witness.jsonl");
 
+    /// Where this form and RFC 8785 (`cmdrvl_core::jcs`) differ: U+E000..=U+FFFF keys against
+    /// keys above U+FFFF, and floats such as 1.0. `params` is the only place a record can hold
+    /// either, so this is what fails if the ledger serializer is ever switched to JCS.
+    #[test]
+    fn ledger_bytes_are_sorted_compact_not_jcs() {
+        let mut params = Map::new();
+        params.insert("\u{10000}".to_string(), Value::from(1));
+        params.insert("\u{e000}".to_string(), Value::from(2));
+        params.insert("ratio".to_string(), Value::from(1.0));
+        params.insert("big".to_string(), Value::from(1e21));
+        let record = WitnessRecord::new("seal", Vec::new(), "OK", 0, params, b"", None);
+        let line = canonical_json(&record);
+
+        // What pack 0.7.2 wrote: serde_json's text of the BTreeMap-backed `Value`.
+        let released_form = serde_json::to_string(&serde_json::to_value(&record).unwrap()).unwrap();
+        assert_eq!(line, released_form);
+        assert!(line.contains("\"ratio\":1.0,\"\u{e000}\":2,\"\u{10000}\":1}"));
+    }
+
     #[test]
     fn released_witness_lines_and_ids_are_reproduced() {
         assert_eq!(RELEASED_LEDGER.lines().count(), 4);
