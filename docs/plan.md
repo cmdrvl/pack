@@ -373,9 +373,10 @@ Checks:
 For `verify.report.v1`, the local validator recognizes a grounding report only
 when `constraint_set_id` is exactly `grounding.v1`, `execution_mode` is
 `batch`, and every result rule ID starts with `grounding.`. Such reports accept
-`sha256:<64 lowercase hex>`, `redacted:hmac-sha256:<32 lowercase hex>`, or an
-absent `constraint_hash`. Non-ground reports must retain the strict SHA-256
-form, and malformed values are invalid. The grounding marker is structural and
+any string beginning with `sha256:` (the released compatibility rule),
+`redacted:hmac-sha256:<32 lowercase hex>`, or an absent `constraint_hash`.
+Non-ground reports retain that same released `sha256:` prefix rule. The keyed
+form is exact; non-strings and other prefixes are invalid. The grounding marker is structural and
 does not prove command provenance; pack still verifies member bytes and all
 other report fields.
 

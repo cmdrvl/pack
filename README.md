@@ -403,10 +403,11 @@ Any change to manifest content — members, note, hashes — changes `pack_id`.
 For `verify.report.v1`, `pack` identifies a grounding report structurally: the
 report declares `constraint_set_id: "grounding.v1"`, uses batch execution, and
 all emitted rule IDs are in the `grounding.` namespace used by `verify ground`.
-Grounding reports accept a normal `sha256:<64 lowercase hex>` constraint hash,
-the keyed redaction form `redacted:hmac-sha256:<32 lowercase hex>`, or no
-`constraint_hash` at all. Every other report still requires the normal SHA-256
-form; malformed hashes remain invalid. This marker is a report-protocol
+Grounding reports accept any string beginning with `sha256:` (the released
+compatibility rule), the keyed redaction form
+`redacted:hmac-sha256:<32 lowercase hex>`, or no `constraint_hash` at all.
+Every other report keeps that same released `sha256:` prefix rule. The keyed
+form is exact; non-strings and other prefixes remain invalid. This marker is a report-protocol
 classification, not provenance: it does not prove that the bytes were produced
 by the `verify ground` command, so member hashes and the rest of the report
 schema remain mandatory checks.
