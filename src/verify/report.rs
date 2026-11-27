@@ -26,6 +26,10 @@ pub struct VerifyChecks {
     pub member_hashes: bool,
     pub pack_id: bool,
     pub schema_validation: String,
+    /// Present only with `--expect-id`: whether the recomputed pack id equals the pinned one.
+    /// Like the other checks it covers one thing; only the outcome is the verdict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_id: Option<bool>,
 }
 
 impl Default for VerifyChecks {
@@ -38,6 +42,7 @@ impl Default for VerifyChecks {
             member_hashes: false,
             pack_id: false,
             schema_validation: "skipped".to_string(),
+            expected_id: None,
         }
     }
 }

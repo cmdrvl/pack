@@ -6,12 +6,21 @@ use serde_json::json;
 use crate::seal::manifest::Manifest;
 
 use super::checks::run_checks;
-use super::report::{VerifyOutcome, VerifyReport};
+use super::report::{InvalidFinding, VerifyOutcome, VerifyReport};
 
 /// Execute `pack verify` on a pack directory.
 ///
 /// Returns (report, exit_code).
 pub fn execute_verify(pack_dir: &Path, json_output: bool) -> (String, u8) {
+    execute_verify_expecting(pack_dir, None, json_output)
+}
+
+/// `execute_verify`, also requiring the recomputed pack id to equal `expected_id` when given.
+pub fn execute_verify_expecting(
+    pack_dir: &Path,
+    expected_id: Option<&str>,
+    json_output: bool,
+) -> (String, u8) {
     // Step 1: Read manifest.json
     let manifest_path = pack_dir.join("manifest.json");
 
@@ -63,7 +72,23 @@ pub fn execute_verify(pack_dir: &Path, json_output: bool) -> (String, u8) {
     }
 
     // Step 4: Run integrity checks
-    let (checks, findings) = run_checks(&manifest, pack_dir);
+    let (mut checks, mut findings) = run_checks(&manifest, pack_dir);
+
+    // Step 5: Compare a pinned id with the id the manifest content produces. The declared
+    // `manifest.pack_id` is only a claim; check `pack_id` above reports whether it is true.
+    if let Some(expected) = expected_id {
+        let recomputed = manifest.recompute_pack_id();
+        let matches = recomputed == expected;
+        checks.expected_id = Some(matches);
+        if !matches {
+            findings.push(InvalidFinding {
+                code: "EXPECTED_ID_MISMATCH".to_string(),
+                path: None,
+                expected: Some(expected.to_string()),
+                actual: Some(recomputed),
+            });
+        }
+    }
 
     let io_failure = findings
         .iter()

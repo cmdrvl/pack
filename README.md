@@ -252,12 +252,43 @@ Verify pack integrity — all checks, structured report.
 ```bash
 pack verify evidence/2025-12/              # Human output
 pack verify evidence/2025-12/ --json       # Machine-readable JSON
+
+# Also require the bundle to be the one whose pack_id you recorded elsewhere
+pack verify evidence/2025-12/ --expect-id "$PINNED_PACK_ID"
 ```
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--expect-id <PACK_ID>` | `sha256:` + 64 lowercase hex | none | Require the recomputed `pack_id` to equal this pinned id |
 | `--json` | flag | `false` | JSON report output |
 | `--no-witness` | flag | `false` | Suppress witness ledger recording |
+
+#### Pinning a bundle with `--expect-id`
+
+A plain `verify` shows that a pack is consistent with its own manifest. It cannot show that it is
+the pack you meant: someone can seal different evidence and it will verify `OK`. `--expect-id`
+takes a `pack_id` you got from somewhere else (a ticket, a receipt, an earlier `seal`) and compares
+it with the id that `verify` **recomputes** from the manifest. The string the manifest declares in
+`pack_id` is never what is compared. Only exit `0` means every integrity check passed *and* the
+recomputed id is the pinned one.
+
+| Case | Outcome | Exit | Findings |
+|------|---------|------|----------|
+| Intact pack, recomputed id equals the pin | `OK` | `0` | none |
+| Intact pack, different id | `INVALID` | `1` | `EXPECTED_ID_MISMATCH` |
+| Manifest declares the pin, manifest content differs | `INVALID` | `1` | `PACK_ID_MISMATCH`, `EXPECTED_ID_MISMATCH` |
+| Manifest matches the pin, member bytes or files do not | `INVALID` | `1` | the integrity finding, such as `HASH_MISMATCH` |
+| Content matches the pin, declared `pack_id` altered | `INVALID` | `1` | `PACK_ID_MISMATCH` |
+| A member cannot be read | `REFUSAL` (`E_IO`) | `2` | `MEMBER_IO_ERROR`, plus `EXPECTED_ID_MISMATCH` if the id differs |
+| Manifest missing, unparseable or unsupported | `REFUSAL` (`E_BAD_PACK`) | `2` | none; same report as without the flag |
+| Value is not `sha256:` + 64 lowercase hex, is missing, or the flag is repeated | command-line error on stderr | `2` | nothing is verified or recorded |
+
+With `--json` the report also has `checks.expected_id` (`true` or `false`) once the manifest has
+parsed. It covers only the id comparison: read `outcome` or the exit code for the verdict. In an
+`INVALID` or `OK` report, `pack_id` is still the id the manifest declares. A witness record of a
+pinned verify carries the pin in `params.expect_id`. As with every `verify`, the input is a pack
+directory; import an archive first with `pack archive import`. A build of `pack` without this flag
+rejects it (exit `2`) instead of ignoring it.
 
 ### inspect
 

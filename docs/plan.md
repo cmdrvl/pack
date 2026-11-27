@@ -117,7 +117,7 @@ pack seal <ARTIFACT>... [--output <DIR>] [--note <TEXT>] [--created <RFC3339>] [
   --created <RFC3339>    Reproducible created timestamp, normalized to UTC
   --outcome <TAG>        Optional canonical anchor (must begin with cmdrvl://)
 
-pack verify <PACK_DIR> [--json]
+pack verify <PACK_DIR> [--expect-id <PACK_ID>] [--json]
 
 pack inspect <PACK_DIR> [--json]
   (metadata only; does not verify hashes, closed-set membership, or pack_id)
@@ -388,6 +388,23 @@ Outcomes:
 - `OK` (exit 0): all checks passed.
 - `INVALID` (exit 1): pack parsed, but one or more integrity/schema checks failed.
 - `REFUSAL` (exit 2): unreadable/invalid manifest or unrecoverable IO error.
+
+### Pinned id (`--expect-id <PACK_ID>`)
+
+`<PACK_ID>` must be exactly `sha256:` followed by 64 lowercase hex characters. Nothing is trimmed
+or case-folded. Any other value, a missing value or a repeated flag is a command-line error: exit
+2, message on stderr, no report, no witness record.
+
+After the checks above, the pinned id is compared with the `pack_id` recomputed in step 8, never
+with the declared `manifest.pack_id`. If they differ, `verify` appends an `EXPECTED_ID_MISMATCH`
+finding (`expected`: the pin, `actual`: the recomputed id) after the other findings. This is a new
+code, not `PACK_ID_MISMATCH`: that one means the pack contradicts itself, while an intact pack can
+fail the expectation. The finding makes an otherwise `OK` pack `INVALID` (exit 1). It never
+replaces another finding or changes a refusal: an unrecoverable IO error stays `REFUSAL` and lists
+it with the others; a manifest refusal happens before the comparison and is unchanged.
+
+Once the manifest has parsed, the JSON report adds `checks.expected_id` (boolean). The witness
+record adds `params.expect_id`. Without the flag, reports and witness records have neither.
 
 ### `verify` JSON shape (when `--json`)
 

@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod archive;
 pub mod cli;
 pub mod detect;
@@ -146,8 +148,13 @@ pub fn run() -> u8 {
                 ExitCode::Refusal.into()
             }
         },
-        Command::Verify { pack_dir, json } => {
-            let (output, exit_code) = verify::execute_verify(&pack_dir, json);
+        Command::Verify {
+            pack_dir,
+            expect_id,
+            json,
+        } => {
+            let (output, exit_code) =
+                verify::execute_verify_expecting(&pack_dir, expect_id.as_deref(), json);
             if !no_witness {
                 let outcome = match exit_code {
                     0 => "OK",
@@ -157,6 +164,9 @@ pub fn run() -> u8 {
                 let mut params = Map::new();
                 params.insert("pack_dir".to_string(), path_value(&pack_dir));
                 params.insert("json".to_string(), Value::Bool(json));
+                if let Some(expect_id) = expect_id {
+                    params.insert("expect_id".to_string(), Value::String(expect_id));
+                }
                 let record = witness::WitnessRecord::new(
                     "verify",
                     vec![input_from_path(&pack_dir)],

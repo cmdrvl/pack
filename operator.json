@@ -46,7 +46,19 @@
         { "code": "E_DUPLICATE" }
       ]
     },
-    { "name": "verify", "description": "Verify pack integrity and schema eligibility", "status": "implemented" },
+    {
+      "name": "verify",
+      "description": "Verify pack integrity and schema eligibility",
+      "status": "implemented",
+      "options": [
+        {
+          "name": "expect-id",
+          "flag": "--expect-id",
+          "type": "pack_id",
+          "description": "Require the pack id recomputed from the manifest to equal this pinned sha256:<64 lowercase hex> id; a different id is INVALID with EXPECTED_ID_MISMATCH (exit 1), and any other form of value is a command-line error (exit 2)"
+        }
+      ]
+    },
     { "name": "render", "description": "Render a verified pack as a self-contained HTML or Markdown audit dossier", "status": "implemented", "read_only": false },
     { "name": "inspect", "description": "Read pack metadata without verifying integrity", "status": "implemented", "witness": "not_recorded" },
     { "name": "diff", "description": "Deterministically diff two packs", "status": "implemented" },

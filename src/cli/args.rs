@@ -60,6 +60,11 @@ pub enum Command {
         /// Path to the pack directory.
         pack_dir: PathBuf,
 
+        /// Require the pack id recomputed from the manifest to equal this pinned id
+        /// (sha256: and 64 lowercase hex characters). A different id is INVALID (exit 1).
+        #[arg(long = "expect-id", value_name = "PACK_ID", value_parser = parse_pack_id)]
+        expect_id: Option<String>,
+
         /// Output as JSON.
         #[arg(long)]
         json: bool,
@@ -140,6 +145,22 @@ pub enum Command {
         #[command(subcommand)]
         action: Option<DoctorAction>,
     },
+}
+
+/// Accept exactly the form `pack seal` writes. Nothing is trimmed or case-folded, so a mistyped
+/// pin is a usage error instead of a different comparison.
+fn parse_pack_id(value: &str) -> Result<String, String> {
+    let well_formed = value.strip_prefix("sha256:").is_some_and(|digest| {
+        digest.len() == 64
+            && digest
+                .bytes()
+                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    });
+    if well_formed {
+        Ok(value.to_string())
+    } else {
+        Err("expected sha256: followed by 64 lowercase hex characters".to_string())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
