@@ -370,6 +370,15 @@ Checks:
 8. Recompute `pack_id` using the same canonical-manifest procedure (`pack_id=""` during hash) and compare with manifest `pack_id`.
 9. Validate known JSON members against locally available schemas (no network fetch during verify).
 
+For `verify.report.v1`, the local validator recognizes a grounding report only
+when `constraint_set_id` is exactly `grounding.v1`, `execution_mode` is
+`batch`, and every result rule ID starts with `grounding.`. Such reports accept
+`sha256:<64 lowercase hex>`, `redacted:hmac-sha256:<32 lowercase hex>`, or an
+absent `constraint_hash`. Non-ground reports must retain the strict SHA-256
+form, and malformed values are invalid. The grounding marker is structural and
+does not prove command provenance; pack still verifies member bytes and all
+other report fields.
+
 If a known type has no local schema installed, verification records that check as skipped (not `INVALID`).
 
 Outcomes:

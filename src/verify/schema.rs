@@ -134,7 +134,7 @@ fn validate_verify_report_v1(content: &[u8]) -> Result<(), String> {
     check_enum_field(&value, "execution_mode", &["batch", "embedded"])?;
     check_enum_field(&value, "outcome", &["PASS", "FAIL", "REFUSAL"])?;
     check_nonempty_string_field(&value, "constraint_set_id")?;
-    check_prefixed_string_field(&value, "constraint_hash", "sha256:")?;
+    check_constraint_hash(&value)?;
     require_object_field(&value, "bindings")?;
     require_object_field(&value, "summary")?;
     require_object_field(&value, "policy_signals")?;
@@ -154,6 +154,76 @@ fn validate_verify_report_v1(content: &[u8]) -> Result<(), String> {
     }
     require_object_field(summary, "by_severity")?;
     Ok(())
+}
+
+/// Grounding reports use the reserved constraint set and grounding rule id
+/// namespace emitted by `verify ground`. This is a structural protocol marker,
+/// not provenance: pack cannot prove which command produced arbitrary member
+/// bytes, so it still verifies the member hash and every report field here.
+fn is_ground_report(value: &serde_json::Value) -> bool {
+    value
+        .get("constraint_set_id")
+        .and_then(serde_json::Value::as_str)
+        == Some("grounding.v1")
+        && value
+            .get("execution_mode")
+            .and_then(serde_json::Value::as_str)
+            == Some("batch")
+        && value
+            .get("results")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|results| {
+                !results.is_empty()
+                    && results.iter().all(|result| {
+                        result
+                            .get("rule_id")
+                            .and_then(serde_json::Value::as_str)
+                            .is_some_and(|rule_id| rule_id.starts_with("grounding."))
+                    })
+            })
+}
+
+fn check_constraint_hash(value: &serde_json::Value) -> Result<(), String> {
+    let ground = is_ground_report(value);
+    let hash = match value.get("constraint_hash") {
+        None => None,
+        Some(serde_json::Value::String(hash)) => Some(hash.as_str()),
+        Some(_) => {
+            return Err("\"constraint_hash\" must be a string when present".to_string());
+        }
+    };
+    match (ground, hash) {
+        (true, None) => Ok(()),
+        (false, None) => Err("missing string \"constraint_hash\" field".to_string()),
+        (_, Some(hash)) if is_sha256_hash(hash) => Ok(()),
+        (true, Some(hash)) if is_keyed_redaction_hash(hash) => Ok(()),
+        (true, Some(_)) => Err(
+            "ground constraint_hash must be sha256:<64 lowercase hex>, redacted:hmac-sha256:<32 lowercase hex>, or absent".to_string(),
+        ),
+        (false, Some(_)) => Err(
+            "non-ground constraint_hash must be sha256:<64 lowercase hex>".to_string(),
+        ),
+    }
+}
+
+fn is_sha256_hash(value: &str) -> bool {
+    value.strip_prefix("sha256:").is_some_and(|hex| {
+        hex.len() == 64
+            && hex
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    })
+}
+
+fn is_keyed_redaction_hash(value: &str) -> bool {
+    value
+        .strip_prefix("redacted:hmac-sha256:")
+        .is_some_and(|hex| {
+            hex.len() == 32
+                && hex
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        })
 }
 
 /// verify.constraint.v1: validate the compiled constraint envelope.
@@ -264,21 +334,6 @@ fn check_nonempty_string_field(value: &serde_json::Value, field: &str) -> Result
     Ok(())
 }
 
-fn check_prefixed_string_field(
-    value: &serde_json::Value,
-    field: &str,
-    prefix: &str,
-) -> Result<(), String> {
-    let actual = value
-        .get(field)
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| format!("missing string \"{field}\" field"))?;
-    if !actual.starts_with(prefix) {
-        return Err(format!("\"{field}\" must start with \"{prefix}\""));
-    }
-    Ok(())
-}
-
 fn require_object_field(value: &serde_json::Value, field: &str) -> Result<(), String> {
     if !value.get(field).is_some_and(serde_json::Value::is_object) {
         return Err(format!("missing or non-object \"{field}\" field"));
@@ -381,6 +436,105 @@ mod tests {
         assert!(findings.is_empty());
     }
 
+    fn verify_report(
+        constraint_set_id: &str,
+        constraint_hash: Option<&str>,
+        rule_ids: &[&str],
+    ) -> Vec<u8> {
+        let mut report = serde_json::json!({
+            "tool": "verify",
+            "version": "verify.report.v1",
+            "execution_mode": "batch",
+            "outcome": "PASS",
+            "constraint_set_id": constraint_set_id,
+            "bindings": {},
+            "summary": {
+                "total_rules": rule_ids.len(),
+                "passed_rules": rule_ids.len(),
+                "failed_rules": 0,
+                "by_severity": {"error": 0, "warn": 0}
+            },
+            "policy_signals": {},
+            "results": rule_ids.iter().map(|rule_id| serde_json::json!({
+                "rule_id": rule_id,
+                "severity": "error",
+                "status": "pass",
+                "violation_count": 0,
+                "affected": []
+            })).collect::<Vec<_>>(),
+            "refusal": null
+        });
+        if let Some(hash) = constraint_hash {
+            report["constraint_hash"] = serde_json::Value::String(hash.to_owned());
+        }
+        serde_json::to_vec(&report).unwrap()
+    }
+
+    #[test]
+    fn ground_report_accepts_sha256_keyed_or_absent_constraint_hash() {
+        let sha256 = format!("sha256:{}", "a".repeat(64));
+        let keyed = format!("redacted:hmac-sha256:{}", "b".repeat(32));
+        for hash in [Some(sha256.as_str()), Some(keyed.as_str()), None] {
+            assert_eq!(
+                validate_verify_report_v1(&verify_report(
+                    "grounding.v1",
+                    hash,
+                    &["grounding.quote.quote"],
+                )),
+                Ok(())
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_or_non_ground_constraint_hashes_remain_invalid() {
+        let malformed = [
+            "redacted:hmac-sha256:short",
+            "redacted:hmac-sha256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+            "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ];
+        for hash in malformed {
+            assert!(
+                validate_verify_report_v1(&verify_report(
+                    "grounding.v1",
+                    Some(hash),
+                    &["grounding.quote.quote"],
+                ))
+                .is_err(),
+                "malformed hash unexpectedly accepted: {hash}"
+            );
+        }
+
+        for malformed in [serde_json::Value::Null, serde_json::json!(42)] {
+            let mut report: serde_json::Value = serde_json::from_slice(&verify_report(
+                "grounding.v1",
+                None,
+                &["grounding.quote.quote"],
+            ))
+            .unwrap();
+            report["constraint_hash"] = malformed;
+            assert!(
+                validate_verify_report_v1(&serde_json::to_vec(&report).unwrap()).is_err(),
+                "non-string constraint hash unexpectedly accepted: {report}"
+            );
+        }
+
+        let non_ground_keyed = verify_report(
+            "run.v1",
+            Some("redacted:hmac-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            &["CHECK"],
+        );
+        assert!(validate_verify_report_v1(&non_ground_keyed).is_err());
+
+        let non_ground_absent = verify_report("run.v1", None, &["CHECK"]);
+        assert!(validate_verify_report_v1(&non_ground_absent).is_err());
+
+        let fake_ground = verify_report("grounding.v1", None, &["CHECK"]);
+        assert!(validate_verify_report_v1(&fake_ground).is_err());
+    }
+
     #[test]
     fn pass_when_valid_verify_constraint_v1() {
         let members = vec![member("constraint.json", Some("verify.constraint.v1"))];
@@ -402,7 +556,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(
             tmp.path().join("report.json"),
-            r#"{"tool":"verify","version":"verify.report.v1","execution_mode":"batch","outcome":"PASS","constraint_set_id":"test","constraint_hash":"sha256:test","bindings":{},"policy_signals":{},"results":[],"refusal":null}"#,
+            r#"{"tool":"verify","version":"verify.report.v1","execution_mode":"batch","outcome":"PASS","constraint_set_id":"test","constraint_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bindings":{},"policy_signals":{},"results":[],"refusal":null}"#,
         )
         .unwrap();
 
