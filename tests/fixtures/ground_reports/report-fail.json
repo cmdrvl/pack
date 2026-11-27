@@ -1,0 +1,52 @@
+{
+  "tool": "verify",
+  "version": "verify.report.v1",
+  "execution_mode": "batch",
+  "outcome": "FAIL",
+  "constraint_set_id": "grounding.v1",
+  "constraint_hash": "sha256:1b595004931497152fa0c25709a0daf130187c0adbd6ffa9ca7dc4754620790c",
+  "bindings": {
+    "filing": {
+      "kind": "relation",
+      "source": "tests/fixtures/ground_reports/document.xml",
+      "content_hash": "sha256:894b2d15aed4412c7820663fa2945ff6896f7dbc2bda7ef64936a1e5bde7bff8",
+      "input_verification": {
+        "status": "VERIFIED",
+        "locks": [
+          "lock.v0.json"
+        ]
+      }
+    }
+  },
+  "summary": {
+    "total_rules": 1,
+    "passed_rules": 0,
+    "failed_rules": 1,
+    "by_severity": {
+      "error": 1,
+      "warn": 0
+    }
+  },
+  "policy_signals": {
+    "severity_band": "ERROR_PRESENT"
+  },
+  "results": [
+    {
+      "rule_id": "grounding.quote.E_QUOTE_NOT_FOUND",
+      "severity": "error",
+      "status": "fail",
+      "violation_count": 1,
+      "affected": [
+        {
+          "binding": "filing",
+          "key": {
+            "claim_id": "redacted:ref:k1"
+          },
+          "field": "quote",
+          "value": "redacted:ref:v1"
+        }
+      ]
+    }
+  ],
+  "refusal": null
+}

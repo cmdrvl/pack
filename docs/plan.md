@@ -370,10 +370,11 @@ Checks:
 8. Recompute `pack_id` using the same canonical-manifest procedure (`pack_id=""` during hash) and compare with manifest `pack_id`.
 9. Validate known JSON members against locally available schemas (no network fetch during verify).
 
-For `verify.report.v1`, the local validator recognizes a grounding report only
-when `constraint_set_id` is exactly `grounding.v1`, `execution_mode` is
-`batch`, and every result rule ID starts with `grounding.`. Such reports accept
-any string beginning with `sha256:` (the released compatibility rule),
+For `verify.report.v1`, the local validator recognizes a grounding report when
+`constraint_set_id` is exactly `grounding.v1` and `execution_mode` is `batch`,
+and either every non-empty result rule ID starts with `grounding.` or the
+outcome is `REFUSAL` with an empty `results` array and an object-valued
+`refusal`. Such reports accept any string beginning with `sha256:` (the released compatibility rule),
 `redacted:hmac-sha256:<32 lowercase hex>`, or an absent `constraint_hash`.
 Non-ground reports retain that same released `sha256:` prefix rule. The keyed
 form is exact; non-strings and other prefixes are invalid. The grounding marker is structural and

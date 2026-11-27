@@ -55,6 +55,78 @@ fn valid_pack_human_output() {
     assert!(stdout.contains("pack_id: sha256:"));
 }
 
+#[test]
+fn released_ground_reports_verify_with_keyed_or_absent_constraint_hash() {
+    let fixtures = [
+        (
+            "pass",
+            include_str!("../tests/fixtures/ground_reports/report-pass.json"),
+        ),
+        (
+            "fail",
+            include_str!("../tests/fixtures/ground_reports/report-fail.json"),
+        ),
+        (
+            "drift-refusal",
+            include_str!("../tests/fixtures/ground_reports/report-drift-refusal.json"),
+        ),
+        (
+            "bad-claims-refusal",
+            include_str!("../tests/fixtures/ground_reports/report-bad-claims-refusal.json"),
+        ),
+        (
+            "empty-claims-refusal",
+            include_str!("../tests/fixtures/ground_reports/report-empty-claims-refusal.json"),
+        ),
+        (
+            "missing-lock-refusal",
+            include_str!("../tests/fixtures/ground_reports/report-missing-lock-refusal.json"),
+        ),
+    ];
+    let keyed = "redacted:hmac-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let tmp = tempfile::tempdir().unwrap();
+
+    for (name, fixture) in fixtures {
+        for (variant, hash) in [("keyed", Some(keyed)), ("absent", None)] {
+            let mut report: serde_json::Value = serde_json::from_str(fixture).unwrap();
+            match hash {
+                Some(hash) => {
+                    report["constraint_hash"] = serde_json::Value::String(hash.to_owned())
+                }
+                None => {
+                    report.as_object_mut().unwrap().remove("constraint_hash");
+                }
+            }
+
+            let report_path = tmp.path().join(format!("{name}-{variant}.json"));
+            std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+            let pack_dir = tmp.path().join(format!("pack-{name}-{variant}"));
+            let seal = pack_cmd()
+                .args([
+                    "seal",
+                    report_path.to_str().unwrap(),
+                    "--out",
+                    pack_dir.to_str().unwrap(),
+                    "--created",
+                    "2026-01-15T00:00:00Z",
+                    "--no-witness",
+                ])
+                .output()
+                .unwrap();
+            assert!(
+                seal.status.success(),
+                "{name}/{variant} seal failed: {}",
+                String::from_utf8_lossy(&seal.stderr)
+            );
+
+            let (verified, code) = verify_json(pack_dir.to_str().unwrap());
+            assert_eq!(code, 0, "{name}/{variant} report was rejected: {verified}");
+            assert_eq!(verified["outcome"], "OK");
+            assert!(verified["invalid"].as_array().unwrap().is_empty());
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // INVALID outcomes (exit 1) — committed fixtures
 // ---------------------------------------------------------------------------

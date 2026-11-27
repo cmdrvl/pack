@@ -1,0 +1,2 @@
+{"claim_id":"quote","source":"filing","quote":"Acme Holdings","byte_span":{"start":58,"end":71}}
+{"claim_id":"number","source":"filing","quote":"95000000.00000000","byte_span":{"start":89,"end":106},"value":95,"scale":"millions","unit":"USD"}

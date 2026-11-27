@@ -401,8 +401,11 @@ Any change to manifest content — members, note, hashes — changes `pack_id`.
 7. **schema_validation** — known artifact types validate against local schemas
 
 For `verify.report.v1`, `pack` identifies a grounding report structurally: the
-report declares `constraint_set_id: "grounding.v1"`, uses batch execution, and
-all emitted rule IDs are in the `grounding.` namespace used by `verify ground`.
+report declares `constraint_set_id: "grounding.v1"` and uses batch execution;
+either it has emitted rule IDs in the `grounding.` namespace used by `verify
+ground`, or it is a `REFUSAL` with an empty `results` array and an object-valued
+`refusal` field. This covers released `verify ground` refusal reports without
+mistaking empty PASS/FAIL reports for grounding reports.
 Grounding reports accept any string beginning with `sha256:` (the released
 compatibility rule), the keyed redaction form
 `redacted:hmac-sha256:<32 lowercase hex>`, or no `constraint_hash` at all.

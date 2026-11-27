@@ -1,0 +1,57 @@
+{
+  "tool": "verify",
+  "version": "verify.report.v1",
+  "execution_mode": "batch",
+  "outcome": "PASS",
+  "constraint_set_id": "grounding.v1",
+  "constraint_hash": "sha256:075ecad65022bc6022bfb49f9b63dda1df0ac15d50c3cc5111bab0b2b7b6de0c",
+  "bindings": {
+    "filing": {
+      "kind": "relation",
+      "source": "tests/fixtures/ground_reports/document.xml",
+      "content_hash": "sha256:894b2d15aed4412c7820663fa2945ff6896f7dbc2bda7ef64936a1e5bde7bff8",
+      "input_verification": {
+        "status": "VERIFIED",
+        "locks": [
+          "lock.v0.json"
+        ]
+      }
+    }
+  },
+  "summary": {
+    "total_rules": 3,
+    "passed_rules": 3,
+    "failed_rules": 0,
+    "by_severity": {
+      "error": 0,
+      "warn": 0
+    }
+  },
+  "policy_signals": {
+    "severity_band": "CLEAN"
+  },
+  "results": [
+    {
+      "rule_id": "grounding.number.numeric",
+      "severity": "error",
+      "status": "pass",
+      "violation_count": 0,
+      "affected": []
+    },
+    {
+      "rule_id": "grounding.number.quote",
+      "severity": "error",
+      "status": "pass",
+      "violation_count": 0,
+      "affected": []
+    },
+    {
+      "rule_id": "grounding.quote.quote",
+      "severity": "error",
+      "status": "pass",
+      "violation_count": 0,
+      "affected": []
+    }
+  ],
+  "refusal": null
+}

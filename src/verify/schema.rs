@@ -157,30 +157,43 @@ fn validate_verify_report_v1(content: &[u8]) -> Result<(), String> {
 }
 
 /// Grounding reports use the reserved constraint set and grounding rule id
-/// namespace emitted by `verify ground`. This is a structural protocol marker,
-/// not provenance: pack cannot prove which command produced arbitrary member
-/// bytes, so it still verifies the member hash and every report field here.
+/// namespace emitted by `verify ground`. A released ground refusal has no rule
+/// results, but carries an object-valued refusal. This is a structural protocol
+/// marker, not provenance: pack cannot prove which command produced arbitrary
+/// member bytes, so it still verifies the member hash and every report field
+/// here.
 fn is_ground_report(value: &serde_json::Value) -> bool {
-    value
+    let structural_marker = value
         .get("constraint_set_id")
         .and_then(serde_json::Value::as_str)
         == Some("grounding.v1")
         && value
             .get("execution_mode")
             .and_then(serde_json::Value::as_str)
-            == Some("batch")
-        && value
-            .get("results")
-            .and_then(serde_json::Value::as_array)
-            .is_some_and(|results| {
-                !results.is_empty()
-                    && results.iter().all(|result| {
-                        result
-                            .get("rule_id")
-                            .and_then(serde_json::Value::as_str)
-                            .is_some_and(|rule_id| rule_id.starts_with("grounding."))
-                    })
-            })
+            == Some("batch");
+    if !structural_marker {
+        return false;
+    }
+
+    let Some(results) = value.get("results").and_then(serde_json::Value::as_array) else {
+        return false;
+    };
+    if results.is_empty() {
+        // Released verify emits REFUSAL reports with no rule results. The
+        // object-valued refusal is the stable marker that distinguishes this
+        // case from a malformed or empty PASS/FAIL report.
+        return value.get("outcome").and_then(serde_json::Value::as_str) == Some("REFUSAL")
+            && value
+                .get("refusal")
+                .is_some_and(serde_json::Value::is_object);
+    }
+
+    results.iter().all(|result| {
+        result
+            .get("rule_id")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|rule_id| rule_id.starts_with("grounding."))
+    })
 }
 
 fn check_constraint_hash(value: &serde_json::Value) -> Result<(), String> {
@@ -485,6 +498,111 @@ mod tests {
                 Ok(())
             );
         }
+    }
+
+    #[test]
+    fn released_ground_refusals_accept_keyed_or_absent_constraint_hash() {
+        let refusal_fixtures = [
+            include_str!("../../tests/fixtures/ground_reports/report-drift-refusal.json"),
+            include_str!("../../tests/fixtures/ground_reports/report-bad-claims-refusal.json"),
+            include_str!("../../tests/fixtures/ground_reports/report-empty-claims-refusal.json"),
+            include_str!("../../tests/fixtures/ground_reports/report-missing-lock-refusal.json"),
+        ];
+        let keyed = "redacted:hmac-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+        for fixture in refusal_fixtures {
+            let mut report: serde_json::Value = serde_json::from_str(fixture).unwrap();
+            assert_eq!(report["outcome"], "REFUSAL");
+            assert_eq!(report["constraint_set_id"], "grounding.v1");
+            assert_eq!(report["execution_mode"], "batch");
+            assert_eq!(report["results"], serde_json::json!([]));
+            assert!(report["refusal"].is_object());
+
+            report["constraint_hash"] = serde_json::Value::String(keyed.to_owned());
+            assert_eq!(
+                validate_verify_report_v1(&serde_json::to_vec(&report).unwrap()),
+                Ok(()),
+                "released ground refusal must accept keyed redaction"
+            );
+
+            report.as_object_mut().unwrap().remove("constraint_hash");
+            assert_eq!(
+                validate_verify_report_v1(&serde_json::to_vec(&report).unwrap()),
+                Ok(()),
+                "released ground refusal must accept an absent constraint hash"
+            );
+        }
+    }
+
+    #[test]
+    fn released_ground_report_fixtures_validate_as_ground_reports() {
+        let fixtures = [
+            (
+                "PASS",
+                include_str!("../../tests/fixtures/ground_reports/report-pass.json"),
+            ),
+            (
+                "FAIL",
+                include_str!("../../tests/fixtures/ground_reports/report-fail.json"),
+            ),
+            (
+                "REFUSAL",
+                include_str!("../../tests/fixtures/ground_reports/report-drift-refusal.json"),
+            ),
+            (
+                "REFUSAL",
+                include_str!("../../tests/fixtures/ground_reports/report-bad-claims-refusal.json"),
+            ),
+            (
+                "REFUSAL",
+                include_str!(
+                    "../../tests/fixtures/ground_reports/report-empty-claims-refusal.json"
+                ),
+            ),
+            (
+                "REFUSAL",
+                include_str!(
+                    "../../tests/fixtures/ground_reports/report-missing-lock-refusal.json"
+                ),
+            ),
+        ];
+
+        for (outcome, fixture) in fixtures {
+            let report: serde_json::Value = serde_json::from_str(fixture).unwrap();
+            assert_eq!(report["outcome"], outcome);
+            assert_eq!(report["constraint_set_id"], "grounding.v1");
+            assert_eq!(report["execution_mode"], "batch");
+            assert_eq!(
+                validate_verify_report_v1(fixture.as_bytes()),
+                Ok(()),
+                "released {outcome} fixture must validate"
+            );
+        }
+    }
+
+    #[test]
+    fn empty_results_are_ground_only_for_refusals_with_refusal_objects() {
+        let mut pass: serde_json::Value =
+            serde_json::from_slice(&verify_report("grounding.v1", None, &[])).unwrap();
+        assert!(validate_verify_report_v1(&serde_json::to_vec(&pass).unwrap()).is_err());
+
+        pass["outcome"] = serde_json::Value::String("FAIL".to_owned());
+        assert!(validate_verify_report_v1(&serde_json::to_vec(&pass).unwrap()).is_err());
+
+        pass["outcome"] = serde_json::Value::String("REFUSAL".to_owned());
+        pass["refusal"] = serde_json::Value::Null;
+        assert!(validate_verify_report_v1(&serde_json::to_vec(&pass).unwrap()).is_err());
+
+        pass["refusal"] = serde_json::json!({"code": "E_IO"});
+        pass.as_object_mut().unwrap().remove("results");
+        assert!(validate_verify_report_v1(&serde_json::to_vec(&pass).unwrap()).is_err());
+
+        pass["results"] = serde_json::json!({});
+        assert!(validate_verify_report_v1(&serde_json::to_vec(&pass).unwrap()).is_err());
+
+        pass["results"] = serde_json::json!([]);
+        pass["constraint_set_id"] = serde_json::Value::String("other.v1".to_owned());
+        assert!(validate_verify_report_v1(&serde_json::to_vec(&pass).unwrap()).is_err());
     }
 
     #[test]
