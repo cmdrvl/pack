@@ -244,20 +244,7 @@ fn collect_dir(
     Ok(())
 }
 /// Validate that a member path is safe (no absolute, no `..`).
-pub fn is_safe_member_path(path: &str) -> bool {
-    if path.is_empty() {
-        return false;
-    }
-    if path.starts_with('/') {
-        return false;
-    }
-    for segment in path.split('/') {
-        if segment == ".." {
-            return false;
-        }
-    }
-    true
-}
+pub use crate::seal::manifest::is_safe_member_path;
 
 #[cfg(test)]
 mod tests {

@@ -1,28 +1,45 @@
 #![forbid(unsafe_code)]
 
-pub mod archive;
-pub mod cli;
 pub mod detect;
-pub mod diff;
-pub mod doctor;
-pub mod inspect;
-pub mod operator;
-mod parallel;
-mod paths;
 pub mod refusal;
 pub mod render;
 pub mod schema;
 pub mod seal;
-mod staging;
+pub(crate) mod tar;
 pub mod verify;
+
+#[cfg(feature = "cli")]
+pub mod archive;
+#[cfg(feature = "cli")]
+pub mod cli;
+#[cfg(feature = "cli")]
+pub mod diff;
+#[cfg(feature = "cli")]
+pub mod doctor;
+#[cfg(feature = "cli")]
+pub mod inspect;
+#[cfg(feature = "cli")]
+pub mod operator;
+#[cfg(feature = "cli")]
+mod parallel;
+#[cfg(feature = "cli")]
+mod paths;
+#[cfg(feature = "cli")]
+mod staging;
+#[cfg(feature = "cli")]
 pub mod witness;
 
+#[cfg(feature = "cli")]
 use clap::Parser;
+#[cfg(feature = "cli")]
 use cli::{ArchiveCommand, Cli, Command, ExitCode, WitnessCommand};
+#[cfg(feature = "cli")]
 use serde_json::{Map, Value};
+#[cfg(feature = "cli")]
 use std::path::Path;
 
 /// Run the pack CLI and return an exit code.
+#[cfg(feature = "cli")]
 pub fn run() -> u8 {
     let cli = Cli::parse();
 
@@ -244,6 +261,7 @@ pub fn run() -> u8 {
     }
 }
 
+#[cfg(feature = "cli")]
 fn dispatch_archive(command: ArchiveCommand) -> u8 {
     match command {
         ArchiveCommand::Export { pack_dir, out } => {
@@ -281,6 +299,7 @@ fn dispatch_archive(command: ArchiveCommand) -> u8 {
     }
 }
 
+#[cfg(feature = "cli")]
 fn dispatch_witness(command: WitnessCommand) -> u8 {
     match command {
         WitnessCommand::Query { filters, json } => {
@@ -293,6 +312,7 @@ fn dispatch_witness(command: WitnessCommand) -> u8 {
     }
 }
 
+#[cfg(feature = "cli")]
 fn dispatch_witness_read(result: Result<String, String>) -> u8 {
     match result {
         Ok(output) => {
@@ -306,26 +326,31 @@ fn dispatch_witness_read(result: Result<String, String>) -> u8 {
     }
 }
 
+#[cfg(feature = "cli")]
 fn append_witness_warning(record: &witness::WitnessRecord) {
     if let Err(e) = witness::append_witness(record) {
         eprintln!("pack: witness append warning: {e}");
     }
 }
 
+#[cfg(feature = "cli")]
 fn input_from_path(path: &Path) -> witness::WitnessInput {
     witness::WitnessRecord::input(path.display().to_string(), None, None)
 }
 
+#[cfg(feature = "cli")]
 fn path_value(path: &Path) -> Value {
     Value::String(path.display().to_string())
 }
 
+#[cfg(feature = "cli")]
 fn stdout_bytes(output: &str) -> Vec<u8> {
     let mut bytes = output.as_bytes().to_vec();
     bytes.push(b'\n');
     bytes
 }
 
+#[cfg(feature = "cli")]
 fn extract_pack_id(output: &str, json_output: bool) -> Option<String> {
     if json_output {
         let value: Value = serde_json::from_str(output).ok()?;

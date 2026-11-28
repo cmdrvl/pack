@@ -5,20 +5,31 @@
 //! the verified bytes. No arbitrary member content is copied into a dossier.
 
 use std::fmt::Write as _;
+#[cfg(feature = "cli")]
 use std::fs;
+#[cfg(feature = "cli")]
 use std::path::Path;
 
 use serde_json::Value;
 
-use crate::cli::RenderFormat;
+#[cfg(feature = "cli")]
+use crate::cli::RenderFormat as CliRenderFormat;
 use crate::refusal::{RefusalCode, RefusalEnvelope};
 use crate::seal::manifest::{Manifest, Member};
+#[cfg(feature = "cli")]
 use crate::verify::execute_verify;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderResult {
     pub pack_id: String,
     pub bytes_written: usize,
+}
+
+/// Output format for the filesystem-free renderer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderFormat {
+    Html,
+    Md,
 }
 
 #[derive(Debug, Clone)]
@@ -93,9 +104,10 @@ struct AirlockSummary {
 }
 
 /// Verify a pack and write a deterministic HTML or Markdown dossier.
+#[cfg(feature = "cli")]
 pub fn execute_render(
     pack_dir: &Path,
-    format: RenderFormat,
+    format: CliRenderFormat,
     output: &Path,
 ) -> Result<RenderResult, Box<RefusalEnvelope>> {
     let (verify_output, verify_code) = execute_verify(pack_dir, true);
@@ -128,8 +140,8 @@ pub fn execute_render(
 
     let dossier = build_dossier(pack_dir, manifest)?;
     let bytes = match format {
-        RenderFormat::Html => render_html(&dossier).into_bytes(),
-        RenderFormat::Md => render_markdown(&dossier).into_bytes(),
+        CliRenderFormat::Html => render_html(&dossier).into_bytes(),
+        CliRenderFormat::Md => render_markdown(&dossier).into_bytes(),
     };
     fs::write(output, &bytes).map_err(|error| {
         io_refusal(
@@ -147,7 +159,30 @@ pub fn execute_render(
     })
 }
 
+#[cfg(feature = "cli")]
 fn build_dossier(pack_dir: &Path, manifest: Manifest) -> Result<Dossier, Box<RefusalEnvelope>> {
+    let mut loaded = Vec::with_capacity(manifest.members.len());
+    for member in &manifest.members {
+        let path = pack_dir.join(&member.path);
+        let bytes = fs::read(&path).map_err(|error| {
+            io_refusal(
+                "Cannot read verified pack member",
+                serde_json::json!({"path": member.path, "error": error.to_string()}),
+            )
+        })?;
+        loaded.push((member.path.clone(), bytes));
+    }
+    let refs = loaded
+        .iter()
+        .map(|(path, bytes)| (path.as_str(), bytes.as_slice()))
+        .collect::<Vec<_>>();
+    build_dossier_from_members(manifest, &refs)
+}
+
+fn build_dossier_from_members(
+    manifest: Manifest,
+    member_bytes: &[(&str, &[u8])],
+) -> Result<Dossier, Box<RefusalEnvelope>> {
     let mut members = Vec::with_capacity(manifest.members.len());
     let mut assess = Vec::new();
     let mut rvl = Vec::new();
@@ -166,14 +201,13 @@ fn build_dossier(pack_dir: &Path, manifest: Manifest) -> Result<Dossier, Box<Ref
             bytes_hash: member.bytes_hash.clone(),
         });
 
-        let path = pack_dir.join(&member.path);
-        let bytes = fs::read(&path).map_err(|error| {
-            io_refusal(
+        let Some((_, bytes)) = member_bytes.iter().find(|(path, _)| *path == member.path) else {
+            return Err(io_refusal(
                 "Cannot read verified pack member",
-                serde_json::json!({"path": member.path, "error": error.to_string()}),
-            )
-        })?;
-        let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+                serde_json::json!({"path": member.path, "error": "member bytes were not supplied"}),
+            ));
+        };
+        let Ok(value) = serde_json::from_slice::<Value>(bytes) else {
             continue;
         };
 
@@ -207,6 +241,28 @@ fn build_dossier(pack_dir: &Path, manifest: Manifest) -> Result<Dossier, Box<Ref
         witnesses,
         lock_inputs,
         airlock,
+    })
+}
+
+/// Render a verified in-memory manifest and its member bytes without filesystem or witness I/O.
+pub fn render_in_memory(
+    manifest: &Manifest,
+    member_bytes: &[(&str, &[u8])],
+    format: RenderFormat,
+) -> Result<Vec<u8>, Box<RefusalEnvelope>> {
+    let report = crate::verify::verify_manifest_members(manifest, member_bytes);
+    if !matches!(report.outcome, crate::verify::VerifyOutcome::OK) {
+        return Err(Box::new(RefusalEnvelope::new(
+            RefusalCode::BadPack,
+            Some("Cannot render an unverified pack".to_string()),
+            Some(serde_json::to_value(report).expect("verify report serializes")),
+        )));
+    }
+
+    let dossier = build_dossier_from_members(manifest.clone(), member_bytes)?;
+    Ok(match format {
+        RenderFormat::Html => render_html(&dossier).into_bytes(),
+        RenderFormat::Md => render_markdown(&dossier).into_bytes(),
     })
 }
 

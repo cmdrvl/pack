@@ -1,7 +1,9 @@
+#[cfg(feature = "cli")]
 use std::fs;
+#[cfg(feature = "cli")]
 use std::path::Path;
 
-use crate::seal::collect::is_safe_member_path;
+use crate::seal::manifest::is_safe_member_path;
 
 use super::report::InvalidFinding;
 use crate::seal::manifest::Member;
@@ -31,6 +33,7 @@ impl SchemaOutcome {
 ///
 /// Reads each member file from `pack_dir`, parses it, and checks required
 /// fields for the declared artifact version. Returns (outcome, findings).
+#[cfg(feature = "cli")]
 pub fn validate_schemas(
     members: &[Member],
     pack_dir: &Path,
@@ -85,6 +88,51 @@ pub fn validate_schemas(
     }
 }
 
+/// Run the same schema validation over already-loaded member bytes.
+///
+/// The in-memory pack APIs intentionally do not resolve paths or consult locks. Missing bytes
+/// are left for the member-integrity checks to report, just as unreadable files are in the CLI
+/// path.
+pub(crate) fn validate_schemas_bytes(
+    members: &[Member],
+    member_bytes: &[(&str, &[u8])],
+) -> (SchemaOutcome, Vec<InvalidFinding>) {
+    let mut findings = Vec::new();
+    let mut checked = 0u32;
+
+    for member in members {
+        if !is_safe_member_path(&member.path) {
+            continue;
+        }
+        let Some(version) = member.artifact_version.as_deref() else {
+            continue;
+        };
+        let Some(validator) = schema_for_version(version) else {
+            continue;
+        };
+        checked += 1;
+        let Some((_, content)) = member_bytes.iter().find(|(path, _)| *path == member.path) else {
+            continue;
+        };
+        if let Err(reason) = validator(content) {
+            findings.push(InvalidFinding {
+                code: "SCHEMA_VIOLATION".to_string(),
+                path: Some(member.path.clone()),
+                expected: Some(format!("valid {version} schema")),
+                actual: Some(reason),
+            });
+        }
+    }
+
+    if checked == 0 {
+        (SchemaOutcome::Skipped, findings)
+    } else if findings.is_empty() {
+        (SchemaOutcome::Pass, findings)
+    } else {
+        (SchemaOutcome::Fail, findings)
+    }
+}
+
 type Validator = fn(&[u8]) -> Result<(), String>;
 
 /// Return a compiled-in schema validator for a known artifact version, or None.
@@ -102,6 +150,7 @@ fn schema_for_version(version: &str) -> Option<Validator> {
 }
 
 /// Return true when a member artifact version has a local schema validator.
+#[cfg(feature = "cli")]
 pub fn has_schema_for_version(version: &str) -> bool {
     schema_for_version(version).is_some()
 }

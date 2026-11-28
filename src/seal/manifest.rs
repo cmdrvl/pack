@@ -5,6 +5,11 @@ use serde::{Deserialize, Serialize};
 /// Manifest schema version.
 pub const MANIFEST_VERSION: &str = "pack.v0";
 
+/// Validate a member path before resolving it against a pack root.
+pub fn is_safe_member_path(path: &str) -> bool {
+    !path.is_empty() && !path.starts_with('/') && !path.split('/').any(|segment| segment == "..")
+}
+
 /// A member descriptor within the pack manifest.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Member {
